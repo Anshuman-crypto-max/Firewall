@@ -69,3 +69,16 @@ A full-stack Flask application with authentication, a protected dashboard, and a
 - Vercel config is included in `vercel.json`
 - Ensure `SECRET_KEY` is configured as an environment variable
 - SQLite works best on Render or Railway with persistent disk storage. Vercel is suitable for demos, but local SQLite storage is ephemeral in serverless environments.
+
+## Deploy on Render
+
+1. Push this project to GitHub.
+2. In Render, click **New +** and choose **Web Service**.
+3. Connect your GitHub repository.
+4. Render should detect the included `render.yaml`, or you can configure the service manually.
+5. Confirm these settings:
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `gunicorn app:app`
+6. Add a persistent disk if you want SQLite data to survive redeploys and restarts.
+7. If you add a disk, set `RENDER_DISK_PATH` to the mount path you choose, such as `/var/data`.
+8. Deploy the service and open the generated `.onrender.com` URL.

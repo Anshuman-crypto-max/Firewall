@@ -11,6 +11,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def create_app():
+    default_db_path = BASE_DIR / "instance" / "attack_detector.db"
+    render_disk_path = os.getenv("RENDER_DISK_PATH")
+    if render_disk_path:
+        default_db_path = Path(render_disk_path) / "attack_detector.db"
+
     app = Flask(
         __name__,
         template_folder=str(BASE_DIR / "templates"),
@@ -20,7 +25,7 @@ def create_app():
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-change-me")
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
         "DATABASE_URL",
-        f"sqlite:///{BASE_DIR / 'instance' / 'attack_detector.db'}",
+        f"sqlite:///{default_db_path}",
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
@@ -42,6 +47,8 @@ def create_app():
     with app.app_context():
         instance_dir = BASE_DIR / "instance"
         instance_dir.mkdir(exist_ok=True)
+        if render_disk_path:
+            Path(render_disk_path).mkdir(parents=True, exist_ok=True)
         db.create_all()
 
     return app

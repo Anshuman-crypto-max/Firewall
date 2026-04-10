@@ -50,11 +50,6 @@ function isLikelyUrl(value) {
     return /^https?:\/\//i.test(value.trim());
 }
 
-function isLikelyHttpRequest(value) {
-    const trimmed = value.trim();
-    return /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\/?/i.test(trimmed) || /http\/1\.[01]/i.test(trimmed);
-}
-
 function handleAuthFailure() {
     showError("Authentication required. Please sign in again.");
     setTimeout(() => {
@@ -217,10 +212,6 @@ async function analyzeRequest() {
         showError("Please enter an HTTP request string before analyzing.");
         return;
     }
-    if (isLikelyUrl(payload) && !isLikelyHttpRequest(payload)) {
-        showError("Please paste a raw HTTP request for manual analysis, not just a URL.");
-        return;
-    }
 
     setLoading(analyzeBtn, loadingState, true, "Analyze Payload", "Analyzing...");
 
@@ -248,6 +239,9 @@ async function analyzeRequest() {
             throw new Error(data.error || "The server could not analyze the request.");
         }
 
+        if (data.url_converted) {
+            showError("URL detected and converted to a raw HTTP request for analysis.");
+        }
         showResult(data);
         updateMetrics(data.summary);
         prependManualHistoryItem(data.history_item);
@@ -268,8 +262,8 @@ async function sendLiveProbe() {
         showError("Enter a payload before sending it through the firewall.");
         return;
     }
-    if (isLikelyUrl(payload) && !isLikelyHttpRequest(payload)) {
-        showError("Live probes do not fetch external URLs. Paste a raw payload or request content to inspect.");
+    if (isLikelyUrl(payload)) {
+        showError("Live probes do not fetch external URLs. Use Manual Request Analysis for URLs.");
         return;
     }
 

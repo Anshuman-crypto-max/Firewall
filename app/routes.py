@@ -185,6 +185,8 @@ def predict():
         return jsonify({"error": "request_text is required."}), 400
 
     processed = preprocess_request(request_text)
+    if processed.get("url_error"):
+        return jsonify({"error": "Invalid URL format"}), 400
     current_app.logger.debug(
         "Manual preprocess: method=%s url=%s headers=%s body=%s",
         processed["method"],
@@ -221,6 +223,7 @@ def predict():
         "history_item": serialize_analysis(log),
         "event_item": serialize_event(event),
         "summary": build_security_summary(current_user.id),
+        "url_converted": processed.get("url_converted", False),
     }
     return jsonify(response), 200
 

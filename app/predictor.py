@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import urlparse
 
 
 ATTACK_PATTERNS = [
@@ -113,8 +114,40 @@ ATTACK_PATTERNS = [
 SEVERITY_SCORE = {"Low": 1, "Medium": 2, "High": 3, "Critical": 4}
 
 
+def convert_url_to_http(url: str) -> str:
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError("Invalid URL format")
+
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+
+    return "\n".join(
+        [
+            f"GET {path} HTTP/1.1",
+            f"Host: {parsed.netloc}",
+            "User-Agent: Mozilla/5.0",
+            "Accept: */*",
+        ]
+    )
+
+
 def preprocess_request(request_text: str) -> dict:
-    raw = (request_text or "").strip()
+    raw_input = (request_text or "").strip()
+    url_converted = False
+    url_error = None
+
+    if raw_input.lower().startswith(("http://", "https://")):
+        try:
+            raw = convert_url_to_http(raw_input)
+            url_converted = True
+        except ValueError as exc:
+            url_error = str(exc)
+            raw = ""
+    else:
+        raw = raw_input
+
     if not raw:
         return {
             "raw": "",
@@ -123,6 +156,8 @@ def preprocess_request(request_text: str) -> dict:
             "url": "",
             "headers": "",
             "body": "",
+            "url_converted": url_converted,
+            "url_error": url_error,
         }
 
     lines = [line.strip() for line in raw.splitlines()]
@@ -156,6 +191,8 @@ def preprocess_request(request_text: str) -> dict:
         "url": url,
         "headers": "\n".join(headers).lower(),
         "body": "\n".join(body_lines).lower(),
+        "url_converted": url_converted,
+        "url_error": url_error,
     }
 
 

@@ -9,18 +9,18 @@
             <p class="eyebrow">AI Web Attack Detection</p>
             <h1>Detection Console</h1>
             <p class="sidebar-copy">
-                Logged in as <strong>{{ current_user.username }}</strong>. Analyze incoming request payloads and review the system verdict instantly.
+                Logged in as <strong>{{ current_user.username }}</strong>. Analyze incoming request payloads, track attack history, and review prevention guidance in one place.
             </p>
         </div>
 
         <div class="sidebar-panels">
             <div class="sidebar-card">
                 <span>Supported patterns</span>
-                <strong>SQLi, XSS, Command Injection, Directory Traversal</strong>
+                <strong>SQLi, XSS, Command Injection, Directory Traversal, CSRF, Recon</strong>
             </div>
             <div class="sidebar-card">
-                <span>API mode</span>
-                <strong>Authenticated POST to <code>/predict</code></strong>
+                <span>Detection mode</span>
+                <strong>Authenticated POST to <code>/predict</code> with persistent event logging</strong>
             </div>
         </div>
 
@@ -31,15 +31,34 @@
         <div class="dashboard-hero">
             <div>
                 <p class="eyebrow">Threat analysis</p>
-                <h2>Inspect a raw HTTP request</h2>
-                <p>Paste a suspicious request string, submit it to the Flask API, and get an AI-style security classification.</p>
+                <h2>Inspect, classify, and triage a raw HTTP request</h2>
+                <p>Paste a suspicious request string, submit it to the Flask API, and receive a verdict, severity, blocking recommendation, and prevention tips.</p>
             </div>
             <div class="hero-badge">Protected Session</div>
         </div>
 
+        <section class="metrics-grid">
+            <article class="metric-card">
+                <span>Total Scans</span>
+                <strong id="metricTotalScans">{{ summary.total_scans }}</strong>
+            </article>
+            <article class="metric-card">
+                <span>Attacks Detected</span>
+                <strong id="metricAttacks">{{ summary.attacks_detected }}</strong>
+            </article>
+            <article class="metric-card">
+                <span>Blocked Requests</span>
+                <strong id="metricBlocked">{{ summary.requests_blocked }}</strong>
+            </article>
+            <article class="metric-card">
+                <span>High Severity Events</span>
+                <strong id="metricHighSeverity">{{ summary.high_severity }}</strong>
+            </article>
+        </section>
+
         <div class="analyzer-card">
             <label for="requestInput">HTTP Request Input</label>
-            <textarea id="requestInput" rows="10" placeholder="Example: GET /login?id=1' OR 1=1 -- HTTP/1.1"></textarea>
+            <textarea id="requestInput" rows="10" placeholder="Example: POST /transfer HTTP/1.1&#10;Origin: https://evil.example&#10;Cookie: session=abc123&#10;&#10;amount=5000&csrf=missing"></textarea>
             <div class="action-row">
                 <button id="analyzeBtn" class="btn btn-primary" type="button">Analyze Request</button>
                 <div id="loadingState" class="loading-state hidden">
@@ -55,7 +74,7 @@
                 <span id="statusBadge" class="status-badge">Pending</span>
             </div>
 
-            <div class="result-grid">
+            <div class="result-grid result-grid-extended">
                 <div class="result-item">
                     <span>Attack Type</span>
                     <strong id="attackType">-</strong>
@@ -64,15 +83,68 @@
                     <span>Confidence</span>
                     <strong id="confidence">-</strong>
                 </div>
+                <div class="result-item">
+                    <span>Severity</span>
+                    <strong id="severity">-</strong>
+                </div>
+                <div class="result-item">
+                    <span>Blocking Decision</span>
+                    <strong id="blockingDecision">-</strong>
+                </div>
             </div>
 
             <div class="result-message">
                 <span>Insight</span>
                 <p id="resultMessage">Awaiting analysis.</p>
             </div>
+
+            <div class="result-message">
+                <span>Recommended Action</span>
+                <p id="recommendedAction">Awaiting analysis.</p>
+            </div>
+
+            <div class="tips-card">
+                <span>Prevention Tips</span>
+                <ul id="preventionTips" class="tips-list">
+                    <li>Run an analysis to view mitigation guidance.</li>
+                </ul>
+            </div>
         </div>
 
         <div id="errorBanner" class="error-banner hidden"></div>
+
+        <section class="history-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Recent Events</p>
+                    <h3>Analysis history and security insights</h3>
+                </div>
+            </div>
+
+            <div id="historyList" class="history-list">
+                {% if summary.recent_analyses %}
+                    {% for item in summary.recent_analyses %}
+                        <article class="history-item">
+                            <div class="history-item-top">
+                                <strong>{{ item.attack_type }}</strong>
+                                <span class="history-badge history-{{ item.status|lower }}">{{ item.status }}</span>
+                            </div>
+                            <p>{{ item.request_excerpt }}</p>
+                            <div class="history-meta">
+                                <span>{{ item.severity }}</span>
+                                <span>{{ item.confidence }}%</span>
+                                <span>{{ item.created_at }}</span>
+                            </div>
+                        </article>
+                    {% endfor %}
+                {% else %}
+                    <article class="history-item empty-state">
+                        <strong>No analyses yet</strong>
+                        <p>Your security event history will appear here after the first scan.</p>
+                    </article>
+                {% endif %}
+            </div>
+        </section>
     </section>
 </main>
 {% endblock %}

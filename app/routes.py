@@ -2,11 +2,49 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from .models import User, db
+from .models import AnalysisLog, User, db
 from .predictor import analyze_request
 
 
 main_bp = Blueprint("main", __name__)
+
+
+def serialize_analysis(record):
+    return {
+        "id": record.id,
+        "attack_type": record.attack_type,
+        "status": record.status,
+        "severity": record.severity,
+        "confidence": round(record.confidence * 100),
+        "blocked": record.blocked,
+        "recommended_action": record.recommended_action,
+        "request_excerpt": (
+            record.request_text[:120] + "..." if len(record.request_text) > 120 else record.request_text
+        ),
+        "created_at": record.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+def build_dashboard_summary(user_id):
+    records = (
+        AnalysisLog.query.filter_by(user_id=user_id)
+        .order_by(AnalysisLog.created_at.desc())
+        .all()
+    )
+    total = len(records)
+    blocked = sum(1 for item in records if item.blocked)
+    attacks = sum(1 for item in records if item.status in {"Attack", "Suspicious"})
+    safe = sum(1 for item in records if item.status == "Safe")
+    high_severity = sum(1 for item in records if item.severity in {"Critical", "High"})
+
+    return {
+        "total_scans": total,
+        "attacks_detected": attacks,
+        "safe_requests": safe,
+        "requests_blocked": blocked,
+        "high_severity": high_severity,
+        "recent_analyses": [serialize_analysis(item) for item in records[:6]],
+    }
 
 
 @main_bp.route("/")
@@ -84,7 +122,8 @@ def logout():
 @main_bp.route("/dashboard")
 @login_required
 def dashboard():
-    return render_template("dashboard.html")
+    summary = build_dashboard_summary(current_user.id)
+    return render_template("dashboard.html", summary=summary)
 
 
 @main_bp.route("/predict", methods=["POST"])
@@ -97,4 +136,22 @@ def predict():
         return jsonify({"error": "request_text is required."}), 400
 
     result = analyze_request(request_text)
-    return jsonify(result), 200
+    log = AnalysisLog(
+        user_id=current_user.id,
+        request_text=request_text,
+        attack_type=result["attack_type"],
+        status=result["status"],
+        severity=result["severity"],
+        confidence=result["confidence"],
+        blocked=result["blocked"],
+        recommended_action=result["recommended_action"],
+    )
+    db.session.add(log)
+    db.session.commit()
+
+    response = {
+        **result,
+        "history_item": serialize_analysis(log),
+        "summary": build_dashboard_summary(current_user.id),
+    }
+    return jsonify(response), 200

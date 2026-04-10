@@ -1,9 +1,10 @@
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from .models import AnalysisLog, User, db
+from .models import AnalysisLog, SecurityEvent, User, db
 from .predictor import analyze_request
+from .security import build_security_summary, generate_vulnerability_scan, persist_security_event
 
 
 main_bp = Blueprint("main", __name__)
@@ -25,25 +26,19 @@ def serialize_analysis(record):
     }
 
 
-def build_dashboard_summary(user_id):
-    records = (
-        AnalysisLog.query.filter_by(user_id=user_id)
-        .order_by(AnalysisLog.created_at.desc())
-        .all()
-    )
-    total = len(records)
-    blocked = sum(1 for item in records if item.blocked)
-    attacks = sum(1 for item in records if item.status in {"Attack", "Suspicious"})
-    safe = sum(1 for item in records if item.status == "Safe")
-    high_severity = sum(1 for item in records if item.severity in {"Critical", "High"})
-
+def serialize_event(record):
     return {
-        "total_scans": total,
-        "attacks_detected": attacks,
-        "safe_requests": safe,
-        "requests_blocked": blocked,
-        "high_severity": high_severity,
-        "recent_analyses": [serialize_analysis(item) for item in records[:6]],
+        "id": record.id,
+        "source": record.source,
+        "method": record.method,
+        "path": record.path,
+        "attack_type": record.attack_type,
+        "status": record.status,
+        "severity": record.severity,
+        "confidence": round(record.confidence * 100),
+        "blocked": record.blocked,
+        "request_excerpt": record.request_excerpt,
+        "created_at": record.created_at.strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
@@ -122,8 +117,20 @@ def logout():
 @main_bp.route("/dashboard")
 @login_required
 def dashboard():
-    summary = build_dashboard_summary(current_user.id)
-    return render_template("dashboard.html", summary=summary)
+    summary = build_security_summary(current_user.id)
+    recent_manual = (
+        AnalysisLog.query.filter_by(user_id=current_user.id)
+        .order_by(AnalysisLog.created_at.desc())
+        .limit(4)
+        .all()
+    )
+    latest_scan = generate_vulnerability_scan(current_app)
+    return render_template(
+        "dashboard.html",
+        summary=summary,
+        recent_manual=[serialize_analysis(item) for item in recent_manual],
+        latest_scan=latest_scan,
+    )
 
 
 @main_bp.route("/predict", methods=["POST"])
@@ -148,10 +155,61 @@ def predict():
     )
     db.session.add(log)
     db.session.commit()
+    event = persist_security_event(
+        {
+            **result,
+            "request_excerpt": result.get("request_excerpt", request_text[:180]),
+            "detection_mode": result.get("detection_mode", "Interactive Payload Analysis"),
+        },
+        request,
+        source="manual",
+        user_id=current_user.id,
+    )
 
     response = {
         **result,
         "history_item": serialize_analysis(log),
-        "summary": build_dashboard_summary(current_user.id),
+        "event_item": serialize_event(event),
+        "summary": build_security_summary(current_user.id),
     }
     return jsonify(response), 200
+
+
+@main_bp.route("/traffic/ingest", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+@login_required
+def traffic_ingest():
+    payload = request.get_json(silent=True) or {}
+    content = payload.get("payload")
+    if content is None:
+        content = request.form.get("payload") or request.args.get("payload") or ""
+
+    return jsonify(
+        {
+            "status": "accepted",
+            "message": "Request passed real-time inspection and reached the protected endpoint.",
+            "echo": content[:160],
+        }
+    ), 200
+
+
+@main_bp.route("/scan", methods=["GET"])
+@login_required
+def scan_security():
+    return jsonify(generate_vulnerability_scan(current_app)), 200
+
+
+@main_bp.route("/events", methods=["GET"])
+@login_required
+def security_events():
+    events = (
+        SecurityEvent.query.filter_by(user_id=current_user.id)
+        .order_by(SecurityEvent.created_at.desc())
+        .limit(8)
+        .all()
+    )
+    return jsonify(
+        {
+            "events": [serialize_event(item) for item in events],
+            "summary": build_security_summary(current_user.id),
+        }
+    ), 200

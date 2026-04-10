@@ -1,16 +1,20 @@
 # AI Web Attack Detection System
 
-A full-stack Flask application with authentication, a protected dashboard, and a dummy AI prediction API for detecting suspicious web requests.
+A Flask-based web application firewall demo that analyzes HTTP requests in real time, blocks hostile traffic, and gives developers a built-in vulnerability scan plus investigation dashboard.
 
 ## Features
 
 - User registration, login, and logout
 - Password hashing with Werkzeug
 - Session handling with Flask-Login
-- Protected dashboard route
+- Real-time HTTP request inspection through Flask middleware
+- Automatic blocking of hostile traffic with `403` responses
+- Detection coverage for SQLi, XSS, CSRF, command injection, traversal, and reconnaissance patterns
+- Persistent security event logging with severity, confidence, and response guidance
+- Analyst dashboard for live traffic, blocked requests, and manual payload triage
+- Developer vulnerability scan endpoint with remediation findings
 - SQLite database with Flask-SQLAlchemy
-- `/predict` POST API returning JSON
-- Modern dark-theme frontend with loading and error states
+- Modern frontend with loading, result, and scan states
 - Deployment-ready for Render or Railway
 
 ## Project Structure
@@ -48,19 +52,27 @@ A full-stack Flask application with authentication, a protected dashboard, and a
 4. Run `python app.py`.
 5. Open `http://127.0.0.1:5000`.
 
-## How Authentication Works
+## How It Works
 
 - Passwords are never stored in plain text. They are hashed with Werkzeug before saving to SQLite.
 - Flask-Login manages the user session after a successful login.
-- Protected routes such as `/dashboard` and `/predict` require an authenticated user.
-- If a non-authenticated user calls `/predict`, the API returns a JSON `401` response.
+- Protected routes such as `/dashboard`, `/predict`, `/traffic/ingest`, `/scan`, and `/events` require an authenticated user.
+- Incoming monitored HTTP requests are analyzed before the route handler executes.
+- If a request is classified as hostile, the middleware blocks it with a `403` response and records the event.
+- The analyst console can still use `/predict` to safely test suspicious payloads without triggering live blocking.
+
+## Key Endpoints
+
+- `/predict` accepts analyst-submitted raw HTTP request text as JSON: `{ "request_text": "..." }`
+- `/traffic/ingest` demonstrates a protected live endpoint that is screened by the real-time firewall
+- `/scan` returns a vulnerability scan report for developers
+- `/events` returns the latest recorded security events for the signed-in analyst
 
 ## Frontend and Backend Integration
 
-- The dashboard uses `fetch()` in `static/js/dashboard.js` to send a POST request to `/predict`.
-- The request body is JSON in the form `{ "request_text": "..." }`.
-- Flask processes the input and returns JSON with `attack_type`, `confidence`, `status`, and `message`.
-- The frontend renders loading, success, and error states dynamically without reloading the page.
+- The dashboard uses `fetch()` in `static/js/dashboard.js` to send live traffic probes, manual payloads, and vulnerability scan requests.
+- Flask processes the input and returns JSON with attack type, confidence, severity, blocking decision, and recommended remediation.
+- The frontend renders loading, success, error, scan, and event-history states without reloading the page.
 
 ## Deployment Notes
 

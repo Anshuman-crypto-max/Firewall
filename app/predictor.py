@@ -13,12 +13,13 @@ ATTACK_PATTERNS = [
             r"(\bor\b\s+1=1)",
             r"('.*--)",
             r"(\bdrop\b\s+\btable\b)",
+            r"(\binformation_schema\b)",
         ],
         "confidence": 0.95,
         "prevention": [
             "Use parameterized SQL queries.",
             "Validate and normalize untrusted input.",
-            "Add WAF rules for common SQLi signatures.",
+            "Add WAF rules for common SQL injection signatures.",
         ],
     },
     {
@@ -29,13 +30,14 @@ ATTACK_PATTERNS = [
             r"<script\b",
             r"javascript:",
             r"onerror\s*=",
+            r"onload\s*=",
             r"alert\s*\(",
         ],
         "confidence": 0.92,
         "prevention": [
             "Escape output in templates.",
             "Use a strong Content Security Policy.",
-            "Strip dangerous tags and inline handlers.",
+            "Strip dangerous tags and inline event handlers.",
         ],
     },
     {
@@ -43,11 +45,11 @@ ATTACK_PATTERNS = [
         "severity": "Critical",
         "recommended_action": "Block the request immediately and inspect any shell command execution paths in the backend.",
         "patterns": [
-            r"(;|\|\|)\s*(cat|ls|whoami|curl|wget|powershell|cmd)\b",
+            r"(;|\|\|)\s*(cat|ls|whoami|curl|wget|powershell|cmd|bash)\b",
             r"`.+`",
             r"\$\(.*\)",
         ],
-        "confidence": 0.9,
+        "confidence": 0.91,
         "prevention": [
             "Avoid shell invocation for user-controlled values.",
             "Use allowlists for permitted commands.",
@@ -76,11 +78,10 @@ ATTACK_PATTERNS = [
         "severity": "High",
         "recommended_action": "Challenge the request, verify anti-CSRF protection, and review origin validation.",
         "patterns": [
-            r"origin:\s*https?://[^\\s]+",
-            r"referer:\s*https?://[^\\s]+",
-            r"\bcsrf\b",
             r"\bx-csrf-token\b",
-            r"\bset-cookie:.*samesite=none\b",
+            r"\bcsrf\b",
+            r"origin:\s*https?://[^\s]+",
+            r"referer:\s*https?://[^\s]+",
         ],
         "confidence": 0.84,
         "prevention": [
@@ -94,7 +95,7 @@ ATTACK_PATTERNS = [
         "severity": "Medium",
         "recommended_action": "Rate limit the source, monitor for repeated probes, and review exposed endpoints.",
         "patterns": [
-            r"\b(nikto|sqlmap|nmap|acunetix|nessus)\b",
+            r"\b(nikto|sqlmap|nmap|acunetix|nessus|dirbuster)\b",
             r"/wp-admin",
             r"/phpmyadmin",
             r"/\.env",
@@ -109,8 +110,40 @@ ATTACK_PATTERNS = [
     },
 ]
 
+SEVERITY_SCORE = {"Low": 1, "Medium": 2, "High": 3, "Critical": 4}
 
-def analyze_request(request_text: str) -> dict:
+
+def _calculate_anomaly_score(text: str, request_meta: dict | None = None) -> tuple[float, list[str]]:
+    lowered = text.lower()
+    score = 0.0
+    reasons = []
+
+    if len(text) > 1200:
+        score += 0.08
+        reasons.append("Oversized request payload")
+
+    suspicious_char_count = sum(lowered.count(token) for token in ["<", ">", "'", "\"", ";", "../", "%2e"])
+    if suspicious_char_count >= 4:
+        score += 0.1
+        reasons.append("High density of special characters and encoded control tokens")
+
+    if lowered.count("http") >= 3:
+        score += 0.05
+        reasons.append("Multiple outbound URL references in a single request")
+
+    if request_meta:
+        method = (request_meta.get("method") or "").upper()
+        origin = (request_meta.get("origin") or "").lower()
+        host = (request_meta.get("host") or "").lower()
+        has_session_cookie = request_meta.get("has_session_cookie", False)
+        if method in {"POST", "PUT", "PATCH", "DELETE"} and has_session_cookie and origin and host and host not in origin:
+            score += 0.24
+            reasons.append("Cross-site state-changing request with active session cookie")
+
+    return min(score, 0.45), reasons
+
+
+def analyze_request(request_text: str, request_meta: dict | None = None) -> dict:
     normalized = (request_text or "").strip()
     if not normalized:
         return {
@@ -122,37 +155,78 @@ def analyze_request(request_text: str) -> dict:
             "recommended_action": "Provide a raw HTTP request before analysis.",
             "matched_signatures": [],
             "prevention_tips": [],
+            "request_excerpt": "",
+            "detection_mode": "Interactive Payload Analysis",
             "message": "Request text is empty.",
         }
 
     lowered = normalized.lower()
+    findings = []
+    prevention_tips = []
     matched_signatures = []
+
     for rule in ATTACK_PATTERNS:
-        for pattern in rule["patterns"]:
-            if re.search(pattern, lowered, flags=re.IGNORECASE):
-                matched_signatures.append(pattern)
+        rule_matches = [
+            pattern for pattern in rule["patterns"] if re.search(pattern, lowered, flags=re.IGNORECASE)
+        ]
+        if not rule_matches:
+            continue
 
-        if matched_signatures:
-            blocked = rule["severity"] in {"Critical", "High"}
-            status = "Attack" if blocked or rule["confidence"] >= 0.8 else "Suspicious"
-            excerpt = normalized[:180] + ("..." if len(normalized) > 180 else "")
-            return {
-                "attack_type": rule["type"],
-                "confidence": rule["confidence"],
-                "status": status,
-                "severity": rule["severity"],
-                "blocked": blocked,
-                "recommended_action": rule["recommended_action"],
-                "matched_signatures": matched_signatures,
-                "prevention_tips": rule["prevention"],
-                "request_excerpt": excerpt,
-                "message": "Suspicious payload matched the detection engine and generated an actionable security verdict.",
-            }
+        findings.append(rule)
+        matched_signatures.extend(rule_matches)
+        prevention_tips.extend(rule["prevention"])
 
-    confidence = 0.82 if len(normalized) > 20 else 0.74
+    anomaly_score, anomaly_reasons = _calculate_anomaly_score(normalized, request_meta=request_meta)
+    excerpt = normalized[:180] + ("..." if len(normalized) > 180 else "")
+    detection_mode = "Real-Time HTTP Firewall" if (request_meta or {}).get("mode") == "live" else "Interactive Payload Analysis"
+
+    if findings:
+        highest_rule = max(findings, key=lambda item: (SEVERITY_SCORE[item["severity"]], item["confidence"]))
+        confidence = min(highest_rule["confidence"] + anomaly_score, 0.99)
+        blocked = SEVERITY_SCORE[highest_rule["severity"]] >= 3 or confidence >= 0.9
+        status = "Attack" if blocked else "Suspicious"
+        attack_type = highest_rule["type"] if len(findings) == 1 else "Multiple Attack Indicators"
+        message = "The request matched known attack signatures and was scored as hostile by the detection engine."
+        if anomaly_reasons:
+            message += f" Additional risk factors: {', '.join(anomaly_reasons)}."
+
+        return {
+            "attack_type": attack_type,
+            "confidence": confidence,
+            "status": status,
+            "severity": highest_rule["severity"],
+            "blocked": blocked,
+            "recommended_action": highest_rule["recommended_action"],
+            "matched_signatures": matched_signatures,
+            "prevention_tips": list(dict.fromkeys(prevention_tips)),
+            "request_excerpt": excerpt,
+            "detection_mode": detection_mode,
+            "message": message,
+        }
+
+    baseline_confidence = 0.68 + anomaly_score
+    if baseline_confidence >= 0.82:
+        return {
+            "attack_type": "Behavioral Anomaly",
+            "confidence": baseline_confidence,
+            "status": "Suspicious",
+            "severity": "Medium",
+            "blocked": False,
+            "recommended_action": "Allow cautiously, increase monitoring, and review the request context for abuse patterns.",
+            "matched_signatures": anomaly_reasons,
+            "prevention_tips": [
+                "Keep request logging enabled for later forensic review.",
+                "Apply baseline validation and authentication controls.",
+                "Introduce anomaly thresholds and rate limiting for repeated probes.",
+            ],
+            "request_excerpt": excerpt,
+            "detection_mode": detection_mode,
+            "message": "No hard signature matched, but the request exhibited anomalous behavior patterns.",
+        }
+
     return {
         "attack_type": "No Threat Detected",
-        "confidence": confidence,
+        "confidence": baseline_confidence,
         "status": "Safe",
         "severity": "Low",
         "blocked": False,
@@ -162,6 +236,7 @@ def analyze_request(request_text: str) -> dict:
             "Keep request logging enabled for later forensic review.",
             "Apply baseline validation and authentication controls.",
         ],
-        "request_excerpt": normalized[:180] + ("..." if len(normalized) > 180 else ""),
+        "request_excerpt": excerpt,
+        "detection_mode": detection_mode,
         "message": "No known attack signature was found in the request.",
     }

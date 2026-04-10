@@ -5,6 +5,7 @@ from flask import Flask, jsonify, redirect, request, url_for
 from flask_cors import CORS
 
 from .models import db, login_manager
+from .security import SECURITY_HEADERS, monitor_current_request
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -43,6 +44,34 @@ def create_app():
     from .routes import main_bp
 
     app.register_blueprint(main_bp)
+
+    @app.before_request
+    def inspect_incoming_traffic():
+        monitored = monitor_current_request()
+        if not monitored:
+            return None
+
+        verdict, event = monitored
+        if verdict["blocked"]:
+            return (
+                jsonify(
+                    {
+                        "error": "Request blocked by the real-time attack detection firewall.",
+                        "event_id": event.id,
+                        "attack_type": verdict["attack_type"],
+                        "severity": verdict["severity"],
+                        "recommended_action": verdict["recommended_action"],
+                    }
+                ),
+                403,
+            )
+        return None
+
+    @app.after_request
+    def apply_security_headers(response):
+        for header_name, header_value in SECURITY_HEADERS.items():
+            response.headers.setdefault(header_name, header_value)
+        return response
 
     with app.app_context():
         instance_dir = BASE_DIR / "instance"

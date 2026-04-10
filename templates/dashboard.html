@@ -9,7 +9,7 @@
             <p class="eyebrow">AI Web Attack Detection</p>
             <h1>Detection Console</h1>
             <p class="sidebar-copy">
-                Logged in as <strong>{{ current_user.username }}</strong>. Analyze incoming request payloads, track attack history, and review prevention guidance in one place.
+                Logged in as <strong>{{ current_user.username }}</strong>. Inspect live HTTP traffic, block hostile payloads in real time, and review developer-facing security insights in one place.
             </p>
         </div>
 
@@ -19,8 +19,8 @@
                 <strong>SQLi, XSS, Command Injection, Directory Traversal, CSRF, Recon</strong>
             </div>
             <div class="sidebar-card">
-                <span>Detection mode</span>
-                <strong>Authenticated POST to <code>/predict</code> with persistent event logging</strong>
+                <span>Protection mode</span>
+                <strong>Live Flask request interception with blocking, event logging, and scan reporting</strong>
             </div>
         </div>
 
@@ -31,15 +31,15 @@
         <div class="dashboard-hero">
             <div>
                 <p class="eyebrow">Threat analysis</p>
-                <h2>Inspect, classify, and triage a raw HTTP request</h2>
-                <p>Paste a suspicious request string, submit it to the Flask API, and receive a verdict, severity, blocking recommendation, and prevention tips.</p>
+                <h2>Inspect, block, and investigate live web attacks</h2>
+                <p>The application now analyzes monitored HTTP requests before route execution, blocks hostile traffic, and gives developers a vulnerability scan plus actionable remediation guidance.</p>
             </div>
-            <div class="hero-badge">Protected Session</div>
+            <div class="hero-badge">Real-Time Protection Enabled</div>
         </div>
 
         <section class="metrics-grid">
             <article class="metric-card">
-                <span>Total Scans</span>
+                <span>Total Events</span>
                 <strong id="metricTotalScans">{{ summary.total_scans }}</strong>
             </article>
             <article class="metric-card">
@@ -56,17 +56,33 @@
             </article>
         </section>
 
-        <div class="analyzer-card">
-            <label for="requestInput">HTTP Request Input</label>
-            <textarea id="requestInput" rows="10" placeholder="Example: POST /transfer HTTP/1.1&#10;Origin: https://evil.example&#10;Cookie: session=abc123&#10;&#10;amount=5000&csrf=missing"></textarea>
-            <div class="action-row">
-                <button id="analyzeBtn" class="btn btn-primary" type="button">Analyze Request</button>
-                <div id="loadingState" class="loading-state hidden">
-                    <span class="spinner"></span>
-                    <span>Running detection...</span>
+        <section class="dual-panel-grid">
+            <div class="analyzer-card">
+                <label for="livePayloadInput">Live Request Probe</label>
+                <textarea id="livePayloadInput" rows="8" placeholder="Try a suspicious payload such as: &lt;script&gt;alert(1)&lt;/script&gt;"></textarea>
+                <div class="action-row">
+                    <button id="probeBtn" class="btn btn-primary" type="button">Send Through Firewall</button>
+                    <div id="probeLoadingState" class="loading-state hidden">
+                        <span class="spinner"></span>
+                        <span>Inspecting live request...</span>
+                    </div>
                 </div>
+                <p class="helper-copy">This sends a real authenticated HTTP request to <code>/traffic/ingest</code>. Malicious traffic is blocked before the endpoint executes.</p>
             </div>
-        </div>
+
+            <div class="analyzer-card">
+                <label for="requestInput">Manual Request Analysis</label>
+                <textarea id="requestInput" rows="8" placeholder="Paste a raw HTTP request for interactive analysis and triage guidance."></textarea>
+                <div class="action-row">
+                    <button id="analyzeBtn" class="btn btn-secondary" type="button">Analyze Payload</button>
+                    <div id="loadingState" class="loading-state hidden">
+                        <span class="spinner"></span>
+                        <span>Running detection...</span>
+                    </div>
+                </div>
+                <p class="helper-copy">This route is intentionally exempt from live blocking so analysts can safely test suspicious samples.</p>
+            </div>
+        </section>
 
         <div id="resultCard" class="result-card hidden" aria-live="polite">
             <div class="result-topline">
@@ -91,6 +107,10 @@
                     <span>Blocking Decision</span>
                     <strong id="blockingDecision">-</strong>
                 </div>
+                <div class="result-item">
+                    <span>Detection Mode</span>
+                    <strong id="detectionMode">-</strong>
+                </div>
             </div>
 
             <div class="result-message">
@@ -113,17 +133,88 @@
 
         <div id="errorBanner" class="error-banner hidden"></div>
 
+        <section class="scan-panel">
+            <div class="panel-header panel-header-inline">
+                <div>
+                    <p class="eyebrow">Developer Scan</p>
+                    <h3>Built-in vulnerability scan for developers</h3>
+                </div>
+                <button id="scanBtn" class="btn btn-secondary" type="button">Run Vulnerability Scan</button>
+            </div>
+
+            <div class="scan-summary">
+                <article class="metric-card scan-summary-card">
+                    <span>Overall Risk</span>
+                    <strong id="scanRisk">{{ latest_scan.overall_risk }}</strong>
+                </article>
+                <article class="metric-card scan-summary-card">
+                    <span>Total Findings</span>
+                    <strong id="scanFindingsCount">{{ latest_scan.total_findings }}</strong>
+                </article>
+            </div>
+
+            <div id="scanFindings" class="history-list">
+                {% for finding in latest_scan.findings %}
+                    <article class="history-item">
+                        <div class="history-item-top">
+                            <strong>{{ finding.title }}</strong>
+                            <span class="history-badge history-{{ finding.severity|lower }}">{{ finding.severity }}</span>
+                        </div>
+                        <p>{{ finding.impact }}</p>
+                        <div class="history-meta">
+                            <span>{{ finding.recommendation }}</span>
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+
         <section class="history-panel">
             <div class="panel-header">
                 <div>
                     <p class="eyebrow">Recent Events</p>
-                    <h3>Analysis history and security insights</h3>
+                    <h3>Live traffic, blocking decisions, and analyst activity</h3>
                 </div>
             </div>
 
             <div id="historyList" class="history-list">
-                {% if summary.recent_analyses %}
-                    {% for item in summary.recent_analyses %}
+                {% if summary.recent_events %}
+                    {% for item in summary.recent_events %}
+                        <article class="history-item">
+                            <div class="history-item-top">
+                                <strong>{{ item.attack_type }}</strong>
+                                <span class="history-badge history-{{ item.status|lower }}">{{ item.status }}</span>
+                            </div>
+                            <p>{{ item.request_excerpt }}</p>
+                            <div class="history-meta">
+                                <span>{{ item.source|capitalize }}</span>
+                                <span>{{ item.method }} {{ item.path }}</span>
+                                <span>{{ item.severity }}</span>
+                                <span>{{ item.confidence }}%</span>
+                                <span>{{ item.created_at }}</span>
+                            </div>
+                        </article>
+                    {% endfor %}
+                {% else %}
+                    <article class="history-item empty-state">
+                        <strong>No security events yet</strong>
+                        <p>Send traffic through the protected endpoint or run a manual analysis to populate the event log.</p>
+                    </article>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="history-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Manual Analyses</p>
+                    <h3>Interactive analyst submissions</h3>
+                </div>
+            </div>
+
+            <div id="manualHistoryList" class="history-list">
+                {% if recent_manual %}
+                    {% for item in recent_manual %}
                         <article class="history-item">
                             <div class="history-item-top">
                                 <strong>{{ item.attack_type }}</strong>
@@ -139,8 +230,8 @@
                     {% endfor %}
                 {% else %}
                     <article class="history-item empty-state">
-                        <strong>No analyses yet</strong>
-                        <p>Your security event history will appear here after the first scan.</p>
+                        <strong>No manual analyses yet</strong>
+                        <p>Use the analyst console to classify a raw HTTP request without triggering the live firewall.</p>
                     </article>
                 {% endif %}
             </div>

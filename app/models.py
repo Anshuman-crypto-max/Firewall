@@ -37,6 +37,29 @@ class AnalysisLog(db.Model):
         return f"<AnalysisLog {self.attack_type} {self.status}>"
 
 
+class SecurityEvent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    source = db.Column(db.String(20), nullable=False, default="live")
+    method = db.Column(db.String(10), nullable=False)
+    path = db.Column(db.String(255), nullable=False)
+    endpoint = db.Column(db.String(120), nullable=True)
+    client_ip = db.Column(db.String(64), nullable=True)
+    user_agent = db.Column(db.String(255), nullable=True)
+    attack_type = db.Column(db.String(120), nullable=False)
+    status = db.Column(db.String(20), nullable=False)
+    severity = db.Column(db.String(20), nullable=False)
+    confidence = db.Column(db.Float, nullable=False)
+    blocked = db.Column(db.Boolean, nullable=False, default=False)
+    recommended_action = db.Column(db.String(255), nullable=False)
+    request_excerpt = db.Column(db.Text, nullable=False)
+    detection_mode = db.Column(db.String(80), nullable=False, default="Real-Time Inspection")
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<SecurityEvent {self.method} {self.path} {self.attack_type}>"
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))

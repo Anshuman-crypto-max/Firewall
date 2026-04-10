@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard | AI Web Attack Detection{% endblock %}
+{% block body_class %}dashboard-body{% endblock %}
+{% block content %}
+<main class="dashboard-layout">
+    <aside class="dashboard-sidebar">
+        <div>
+            <p class="eyebrow">AI Web Attack Detection</p>
+            <h1>Detection Console</h1>
+            <p class="sidebar-copy">
+                Logged in as <strong>{{ current_user.username }}</strong>. Analyze incoming request payloads and review the system verdict instantly.
+            </p>
+        </div>
+
+        <div class="sidebar-panels">
+            <div class="sidebar-card">
+                <span>Supported patterns</span>
+                <strong>SQLi, XSS, Command Injection, Directory Traversal</strong>
+            </div>
+            <div class="sidebar-card">
+                <span>API mode</span>
+                <strong>Authenticated POST to <code>/predict</code></strong>
+            </div>
+        </div>
+
+        <a class="btn btn-secondary" href="{{ url_for('main.logout') }}">Logout</a>
+    </aside>
+
+    <section class="dashboard-main">
+        <div class="dashboard-hero">
+            <div>
+                <p class="eyebrow">Threat analysis</p>
+                <h2>Inspect a raw HTTP request</h2>
+                <p>Paste a suspicious request string, submit it to the Flask API, and get an AI-style security classification.</p>
+            </div>
+            <div class="hero-badge">Protected Session</div>
+        </div>
+
+        <div class="analyzer-card">
+            <label for="requestInput">HTTP Request Input</label>
+            <textarea id="requestInput" rows="10" placeholder="Example: GET /login?id=1' OR 1=1 -- HTTP/1.1"></textarea>
+            <div class="action-row">
+                <button id="analyzeBtn" class="btn btn-primary" type="button">Analyze Request</button>
+                <div id="loadingState" class="loading-state hidden">
+                    <span class="spinner"></span>
+                    <span>Running detection...</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="resultCard" class="result-card hidden" aria-live="polite">
+            <div class="result-topline">
+                <p class="eyebrow">Detection Result</p>
+                <span id="statusBadge" class="status-badge">Pending</span>
+            </div>
+
+            <div class="result-grid">
+                <div class="result-item">
+                    <span>Attack Type</span>
+                    <strong id="attackType">-</strong>
+                </div>
+                <div class="result-item">
+                    <span>Confidence</span>
+                    <strong id="confidence">-</strong>
+                </div>
+            </div>
+
+            <div class="result-message">
+                <span>Insight</span>
+                <p id="resultMessage">Awaiting analysis.</p>
+            </div>
+        </div>
+
+        <div id="errorBanner" class="error-banner hidden"></div>
+    </section>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

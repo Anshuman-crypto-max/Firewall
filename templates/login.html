@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Login | AI Web Attack Detection{% endblock %}
+{% block body_class %}auth-body{% endblock %}
+
+{% block content %}
+<main class="auth-layout">
+    <section class="auth-panel auth-panel-brand">
+        <div class="glow glow-one"></div>
+        <div class="glow glow-two"></div>
+        <p class="eyebrow">Threat Intelligence Portal</p>
+        <h1>Monitor suspicious web traffic with an AI-ready security dashboard.</h1>
+        <p class="auth-copy">
+            Sign in to inspect suspicious requests, simulate attack detection, and manage your secure workspace.
+        </p>
+        <div class="feature-list">
+            <div class="feature-card">
+                <span>Realtime analysis</span>
+                <strong>Payload classification in one click</strong>
+            </div>
+            <div class="feature-card">
+                <span>Protected workspace</span>
+                <strong>Session-backed dashboard access</strong>
+            </div>
+            <div class="feature-card">
+                <span>Deployment-ready</span>
+                <strong>Flask + SQLite with cloud-friendly setup</strong>
+            </div>
+        </div>
+    </section>
+
+    <section class="auth-panel auth-panel-form">
+        <div class="form-header">
+            <p class="eyebrow">Welcome back</p>
+            <h2>Sign in to continue</h2>
+            <p>Use your username or email to access the dashboard.</p>
+        </div>
+
+        <form method="POST" class="auth-form">
+            <label for="identity">Username or Email</label>
+            <input id="identity" name="identity" type="text" placeholder="security.admin" required>
+
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" placeholder="Enter your password" required>
+
+            <button type="submit" class="btn btn-primary">Login</button>
+        </form>
+
+        <p class="auth-footer">
+            New here?
+            <a href="{{ url_for('main.register') }}">Create an account</a>
+        </p>
+    </section>
+</main>
+{% endblock %}

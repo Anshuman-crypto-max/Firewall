@@ -46,6 +46,22 @@ function hideError() {
     errorBanner.textContent = "";
 }
 
+function isLikelyUrl(value) {
+    return /^https?:\/\//i.test(value.trim());
+}
+
+function isLikelyHttpRequest(value) {
+    const trimmed = value.trim();
+    return /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\/?/i.test(trimmed) || /http\/1\.[01]/i.test(trimmed);
+}
+
+function handleAuthFailure() {
+    showError("Authentication required. Please sign in again.");
+    setTimeout(() => {
+        window.location.href = "/login";
+    }, 800);
+}
+
 function showResult(data) {
     const isAttack = data.status === "Attack" || data.status === "Suspicious";
 
@@ -201,6 +217,10 @@ async function analyzeRequest() {
         showError("Please enter an HTTP request string before analyzing.");
         return;
     }
+    if (isLikelyUrl(payload) && !isLikelyHttpRequest(payload)) {
+        showError("Please paste a raw HTTP request for manual analysis, not just a URL.");
+        return;
+    }
 
     setLoading(analyzeBtn, loadingState, true, "Analyze Payload", "Analyzing...");
 
@@ -220,6 +240,10 @@ async function analyzeRequest() {
             throw new Error("The server returned an unreadable response.");
         }
 
+        if (response.status === 401) {
+            handleAuthFailure();
+            return;
+        }
         if (!response.ok) {
             throw new Error(data.error || "The server could not analyze the request.");
         }
@@ -244,6 +268,10 @@ async function sendLiveProbe() {
         showError("Enter a payload before sending it through the firewall.");
         return;
     }
+    if (isLikelyUrl(payload) && !isLikelyHttpRequest(payload)) {
+        showError("Live probes do not fetch external URLs. Paste a raw payload or request content to inspect.");
+        return;
+    }
 
     setLoading(probeBtn, probeLoadingState, true, "Send Through Firewall", "Inspecting...");
 
@@ -257,6 +285,10 @@ async function sendLiveProbe() {
         });
 
         const data = await response.json();
+        if (response.status === 401) {
+            handleAuthFailure();
+            return;
+        }
         if (!response.ok) {
             showResult({
                 attack_type: data.attack_type || "Blocked Request",

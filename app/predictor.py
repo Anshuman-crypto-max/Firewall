@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
+from pathlib import Path
+from urllib.parse import urlparse, parse_qs
+
+import joblib
 
 
 ATTACK_PATTERNS = [
@@ -189,10 +192,105 @@ def preprocess_request(request_text: str) -> dict:
         "normalized": normalized,
         "method": method,
         "url": url,
+        "host": _extract_host(headers),
         "headers": "\n".join(headers).lower(),
         "body": "\n".join(body_lines).lower(),
         "url_converted": url_converted,
         "url_error": url_error,
+    }
+
+
+def _extract_host(headers: list[str]) -> str:
+    for header in headers:
+        if header.lower().startswith("host:"):
+            return header.split(":", 1)[1].strip()
+    return ""
+
+
+def extract_url_features(url: str) -> dict[str, float]:
+    parsed = urlparse(url)
+    path = parsed.path or ""
+    query = parsed.query or ""
+    netloc = parsed.netloc or ""
+    full = url.lower()
+    special_chars = sum(full.count(ch) for ch in ["@", "?", "&", "=", "-", "_", "%", "."])
+    query_params = parse_qs(query)
+    suspicious_keywords = [
+        "login",
+        "admin",
+        "verify",
+        "free",
+        "update",
+        "secure",
+        "account",
+        "token",
+        "pay",
+        "bank",
+        "confirm",
+        "signin",
+        "reset",
+    ]
+    suspicious_hits = sum(1 for keyword in suspicious_keywords if keyword in full)
+
+    return {
+        "length": len(full),
+        "host_length": len(netloc),
+        "path_length": len(path),
+        "query_length": len(query),
+        "num_digits": sum(ch.isdigit() for ch in full),
+        "num_dots": full.count("."),
+        "num_slashes": full.count("/"),
+        "num_special": special_chars,
+        "num_query_params": len(query_params),
+        "has_login": int("login" in full),
+        "has_admin": int("admin" in full),
+        "has_verify": int("verify" in full),
+        "has_free": int("free" in full),
+        "has_update": int("update" in full),
+        "has_secure": int("secure" in full),
+        "has_account": int("account" in full),
+        "has_token": int("token" in full),
+        "has_pay": int("pay" in full),
+        "has_bank": int("bank" in full),
+        "has_confirm": int("confirm" in full),
+        "suspicious_word_count": suspicious_hits,
+        "tld_length": len(parsed.netloc.split(".")[-1]) if "." in parsed.netloc else 0,
+    }
+
+
+def _load_url_model():
+    model_path = Path(__file__).resolve().parent.parent / "models" / "url_classifier.pkl"
+    if not model_path.exists():
+        return None
+    return joblib.load(model_path)
+
+
+URL_MODEL = _load_url_model()
+
+
+def classify_url(url: str) -> dict | None:
+    if not URL_MODEL:
+        return None
+    features = extract_url_features(url)
+    feature_columns = URL_MODEL.get("feature_columns") or list(features.keys())
+    vector = [features.get(col, 0.0) for col in feature_columns]
+    pipeline = URL_MODEL["pipeline"]
+    prob_attack = float(pipeline.predict_proba([vector])[0][1])
+    status = "Attack" if prob_attack >= 0.5 else "Safe"
+    return {
+        "attack_type": "Malicious URL" if status == "Attack" else "Safe URL",
+        "confidence": prob_attack if status == "Attack" else 1 - prob_attack,
+        "status": status,
+        "severity": "High" if status == "Attack" else "Low",
+        "blocked": status == "Attack",
+        "recommended_action": "Block and investigate the URL origin." if status == "Attack" else "Allow and monitor.",
+        "matched_signatures": [],
+        "prevention_tips": [
+            "Inspect URL reputation and hosting provider.",
+            "Enable URL filtering at the edge for known malicious domains.",
+        ],
+        "detection_mode": "URL ML Classifier",
+        "message": "URL classification completed by the ML model.",
     }
 
 
@@ -245,6 +343,18 @@ def analyze_request(request_text: str, request_meta: dict | None = None) -> dict
         }
 
     lowered = normalized
+    if parsed.get("url"):
+        if parsed["url"].startswith(("http://", "https://")):
+            url_candidate = parsed["url"]
+        elif parsed.get("host"):
+            url_candidate = f"http://{parsed['host']}{parsed['url']}"
+        else:
+            url_candidate = ""
+        if url_candidate:
+            ml_result = classify_url(url_candidate)
+            if ml_result:
+                ml_result["request_excerpt"] = (parsed["raw"][:180] + ("..." if len(parsed["raw"]) > 180 else ""))
+                return ml_result
     findings = []
     prevention_tips = []
     matched_signatures = []

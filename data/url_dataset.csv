@@ -1,0 +1,21 @@
+url,label
+https://example.com,Safe
+https://example.com/about,Safe
+https://www.google.com/search?q=security,Safe
+https://github.com/login,Safe
+https://docs.python.org/3/,Safe
+https://www.wikipedia.org/,Safe
+https://store.steampowered.com/,Safe
+https://www.microsoft.com/en-us/,Safe
+https://www.apple.com/iphone/,Safe
+https://www.cloudflare.com/learning/,Safe
+http://secure-update-login.verify-account.example.com/login,Attack
+http://paypal.com.verify-user.example.net/auth,Attack
+http://bank-secure.example.org/confirm?user=admin,Attack
+http://free-gift-login.example.com/verify,Attack
+http://example.com/%2e%2e/%2e%2e/etc/passwd,Attack
+http://example.com/login.php?user=admin' OR 1=1--,Attack
+http://example.com/redirect?url=http://evil.example.com,Attack
+http://example.com/.env,Attack
+http://example.com/wp-admin,Attack
+http://example.com/?cmd=cat%20/etc/passwd,Attack

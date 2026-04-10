@@ -81,3 +81,7 @@ def create_app():
         db.create_all()
 
     return app
+
+
+# Export a WSGI app for gunicorn (gunicorn app:app)
+app = create_app()

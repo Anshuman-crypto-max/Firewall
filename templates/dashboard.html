@@ -58,29 +58,28 @@
 
         <section class="dual-panel-grid">
             <div class="analyzer-card">
-                <label for="livePayloadInput">Live Request Probe</label>
-                <textarea id="livePayloadInput" rows="8" placeholder="Try a suspicious payload such as: &lt;script&gt;alert(1)&lt;/script&gt;"></textarea>
-                <div class="action-row">
-                    <button id="probeBtn" class="btn btn-primary" type="button">Send Through Firewall</button>
-                    <div id="probeLoadingState" class="loading-state hidden">
-                        <span class="spinner"></span>
-                        <span>Inspecting live request...</span>
-                    </div>
-                </div>
-                <p class="helper-copy">This sends a real authenticated HTTP request to <code>/traffic/ingest</code>. Malicious traffic is blocked before the endpoint executes.</p>
-            </div>
-
-            <div class="analyzer-card">
                 <label for="requestInput">Manual Request Analysis</label>
-                <textarea id="requestInput" rows="8" placeholder="Paste a raw HTTP request for interactive analysis and triage guidance."></textarea>
+                <textarea id="requestInput" rows="8" placeholder="Paste a raw HTTP request or a URL for interactive analysis and triage guidance."></textarea>
                 <div class="action-row">
-                    <button id="analyzeBtn" class="btn btn-secondary" type="button">Analyze Payload</button>
+                    <button id="analyzeBtn" class="btn btn-primary" type="button">Analyze Payload</button>
                     <div id="loadingState" class="loading-state hidden">
                         <span class="spinner"></span>
                         <span>Running detection...</span>
                     </div>
                 </div>
-                <p class="helper-copy">This route is intentionally exempt from live blocking so analysts can safely test suspicious samples.</p>
+                <p class="helper-copy">Manual analysis is exempt from automatic blocking so analysts can safely test suspicious samples.</p>
+            </div>
+
+            <div class="analyzer-card">
+                <p class="eyebrow">Login Security Monitor</p>
+                <h3>Brute-force protection status</h3>
+                <p class="helper-copy">
+                    The login endpoint enforces rate limits, CAPTCHA checks, and temporary IP blocks for rapid failed attempts.
+                </p>
+                <div class="action-row">
+                    <a class="btn btn-secondary" href="{{ url_for('main.security_admin') }}">Open Security Monitor</a>
+                </div>
+                <p class="helper-copy">Use the monitor to review blocked IPs and recent failed logins.</p>
             </div>
         </section>
 

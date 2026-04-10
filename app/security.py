@@ -20,6 +20,7 @@ EXEMPT_ENDPOINTS = {
     "main.predict",
     "main.scan_security",
     "main.security_events",
+    "main.security_admin",
 }
 
 SECURITY_HEADERS = {

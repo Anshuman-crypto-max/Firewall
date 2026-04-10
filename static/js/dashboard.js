@@ -1,10 +1,7 @@
 const requestInput = document.getElementById("requestInput");
-const livePayloadInput = document.getElementById("livePayloadInput");
 const analyzeBtn = document.getElementById("analyzeBtn");
-const probeBtn = document.getElementById("probeBtn");
 const scanBtn = document.getElementById("scanBtn");
 const loadingState = document.getElementById("loadingState");
-const probeLoadingState = document.getElementById("probeLoadingState");
 const resultCard = document.getElementById("resultCard");
 const errorBanner = document.getElementById("errorBanner");
 const attackType = document.getElementById("attackType");
@@ -253,81 +250,6 @@ async function analyzeRequest() {
     }
 }
 
-async function sendLiveProbe() {
-    hideError();
-    resultCard.classList.add("hidden");
-
-    const payload = livePayloadInput.value.trim();
-    if (!payload) {
-        showError("Enter a payload before sending it through the firewall.");
-        return;
-    }
-    if (isLikelyUrl(payload)) {
-        showError("Live probes do not fetch external URLs. Use Manual Request Analysis for URLs.");
-        return;
-    }
-
-    setLoading(probeBtn, probeLoadingState, true, "Send Through Firewall", "Inspecting...");
-
-    try {
-        const response = await fetch("/traffic/ingest", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ payload }),
-        });
-
-        const data = await response.json();
-        if (response.status === 401) {
-            handleAuthFailure();
-            return;
-        }
-        if (!response.ok) {
-            showResult({
-                attack_type: data.attack_type || "Blocked Request",
-                confidence: 0.95,
-                severity: data.severity || "High",
-                blocked: true,
-                status: "Attack",
-                detection_mode: "Real-Time HTTP Firewall",
-                recommended_action: data.recommended_action || "Review the blocked request and confirm the source is malicious.",
-                prevention_tips: [
-                    "Inspect the event log for the blocked payload.",
-                    "Refine validation and rate limiting around the targeted route.",
-                ],
-                message: data.error || "The live firewall blocked the request before it reached the application route.",
-            });
-        } else {
-            showResult({
-                attack_type: "Allowed Request",
-                confidence: 0.76,
-                severity: "Low",
-                blocked: false,
-                status: "Safe",
-                detection_mode: "Real-Time HTTP Firewall",
-                recommended_action: "The request was allowed and logged for monitoring.",
-                prevention_tips: [
-                    "Continue monitoring repeat activity from the same client.",
-                    "Review logs if the payload changes or escalates.",
-                ],
-                message: data.message || "The request passed live inspection.",
-            });
-        }
-
-        const eventsResponse = await fetch("/events");
-        const eventsData = await eventsResponse.json();
-        if (Array.isArray(eventsData.events) && eventsData.events.length > 0) {
-            renderHistoryItems(eventsData.events);
-        }
-        updateMetrics(eventsData.summary);
-    } catch (error) {
-        showError(error.message || "Unable to send the live request probe.");
-    } finally {
-        setLoading(probeBtn, probeLoadingState, false, "Send Through Firewall", "Inspecting...");
-    }
-}
-
 async function runVulnerabilityScan() {
     hideError();
 
@@ -359,10 +281,6 @@ if (analyzeBtn) {
     analyzeBtn.addEventListener("click", analyzeRequest);
 }
 
-if (probeBtn) {
-    probeBtn.addEventListener("click", sendLiveProbe);
-}
-
 if (scanBtn) {
     scanBtn.addEventListener("click", runVulnerabilityScan);
 }
@@ -371,14 +289,6 @@ if (requestInput) {
     requestInput.addEventListener("keydown", (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
             analyzeRequest();
-        }
-    });
-}
-
-if (livePayloadInput) {
-    livePayloadInput.addEventListener("keydown", (event) => {
-        if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-            sendLiveProbe();
         }
     });
 }

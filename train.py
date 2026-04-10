@@ -10,11 +10,14 @@ import numpy as np
 import pandas as pd
 from imblearn.over_sampling import SMOTE, RandomOverSampler
 from imblearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.feature_extraction.text import TfidfVectorizer
+import re
 
 
 SUSPICIOUS_KEYWORDS = [
@@ -44,6 +47,8 @@ def extract_url_features(url: str) -> dict[str, float]:
 
     query_params = parse_qs(query)
     suspicious_hits = sum(1 for keyword in SUSPICIOUS_KEYWORDS if keyword in full)
+    digit_ratio = (sum(ch.isdigit() for ch in full) / max(1, len(full)))
+    ip_like = int(bool(re.match(r"^(\d{1,3}\.){3}\d{1,3}", parsed.netloc)))
 
     return {
         "length": len(full),
@@ -68,6 +73,8 @@ def extract_url_features(url: str) -> dict[str, float]:
         "has_confirm": int("confirm" in full),
         "suspicious_word_count": suspicious_hits,
         "tld_length": len(parsed.netloc.split(".")[-1]) if "." in parsed.netloc else 0,
+        "digit_ratio": digit_ratio,
+        "ip_like": ip_like,
     }
 
 
@@ -88,10 +95,22 @@ def train_model(data_path: Path, model_path: Path, model_type: str) -> None:
     print(df["label"].value_counts())
 
     X = build_feature_matrix(df["url"].astype(str))
+    X["url_text"] = df["url"].astype(str).str.lower()
     y = df["label"].astype(int)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    numeric_features = [col for col in X.columns if col != "url_text"]
+    text_feature = "url_text"
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), numeric_features),
+            ("txt", TfidfVectorizer(ngram_range=(3, 5), analyzer="char"), text_feature),
+        ],
+        sparse_threshold=0.3,
     )
 
     if model_type == "logistic":
@@ -102,7 +121,7 @@ def train_model(data_path: Path, model_path: Path, model_type: str) -> None:
         sampler = _build_sampler(y_train)
         pipeline = Pipeline(
             steps=[
-                ("scaler", StandardScaler()),
+                ("features", preprocessor),
                 ("sampler", sampler),
                 ("model", classifier),
             ]
@@ -116,6 +135,7 @@ def train_model(data_path: Path, model_path: Path, model_type: str) -> None:
         sampler = _build_sampler(y_train)
         pipeline = Pipeline(
             steps=[
+                ("features", preprocessor),
                 ("sampler", sampler),
                 ("model", classifier),
             ]

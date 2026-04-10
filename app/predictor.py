@@ -6,6 +6,7 @@ import pandas as pd
 from urllib.parse import urlparse, parse_qs
 
 import joblib
+import re
 
 
 ATTACK_PATTERNS = [
@@ -232,6 +233,8 @@ def extract_url_features(url: str) -> dict[str, float]:
         "reset",
     ]
     suspicious_hits = sum(1 for keyword in suspicious_keywords if keyword in full)
+    digit_ratio = (sum(ch.isdigit() for ch in full) / max(1, len(full)))
+    ip_like = int(bool(re.match(r"^(\d{1,3}\.){3}\d{1,3}", parsed.netloc)))
 
     return {
         "length": len(full),
@@ -256,6 +259,8 @@ def extract_url_features(url: str) -> dict[str, float]:
         "has_confirm": int("confirm" in full),
         "suspicious_word_count": suspicious_hits,
         "tld_length": len(parsed.netloc.split(".")[-1]) if "." in parsed.netloc else 0,
+        "digit_ratio": digit_ratio,
+        "ip_like": ip_like,
     }
 
 
@@ -275,6 +280,7 @@ def classify_url(url: str) -> dict | None:
     features = extract_url_features(url)
     feature_columns = URL_MODEL.get("feature_columns") or list(features.keys())
     vector = {col: features.get(col, 0.0) for col in feature_columns}
+    vector["url_text"] = url.lower()
     pipeline = URL_MODEL["pipeline"]
     df = pd.DataFrame([vector], columns=feature_columns)
     prob_attack = float(pipeline.predict_proba(df)[0][1])

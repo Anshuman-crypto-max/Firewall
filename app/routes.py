@@ -204,6 +204,11 @@ def predict():
         processed["body"][:120],
     )
     result = analyze_request(processed["raw"])
+    current_app.logger.info(
+        "URL prediction: status=%s confidence=%.3f",
+        result.get("status"),
+        float(result.get("confidence", 0.0)),
+    )
     log = AnalysisLog(
         user_id=current_user.id,
         request_text=request_text,

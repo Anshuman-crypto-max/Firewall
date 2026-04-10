@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+import pandas as pd
 from urllib.parse import urlparse, parse_qs
 
 import joblib
@@ -273,10 +274,13 @@ def classify_url(url: str) -> dict | None:
         return None
     features = extract_url_features(url)
     feature_columns = URL_MODEL.get("feature_columns") or list(features.keys())
-    vector = [features.get(col, 0.0) for col in feature_columns]
+    vector = {col: features.get(col, 0.0) for col in feature_columns}
     pipeline = URL_MODEL["pipeline"]
-    prob_attack = float(pipeline.predict_proba([vector])[0][1])
-    status = "Attack" if prob_attack >= 0.5 else "Safe"
+    df = pd.DataFrame([vector], columns=feature_columns)
+    prob_attack = float(pipeline.predict_proba(df)[0][1])
+    threshold = float(Path(__file__).resolve().parent.parent.joinpath("instance", "url_threshold.txt").read_text().strip()
+                      ) if (Path(__file__).resolve().parent.parent / "instance" / "url_threshold.txt").exists() else 0.5
+    status = "Attack" if prob_attack >= threshold else "Safe"
     return {
         "attack_type": "Malicious URL" if status == "Attack" else "Safe URL",
         "confidence": prob_attack if status == "Attack" else 1 - prob_attack,

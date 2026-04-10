@@ -8,11 +8,11 @@ from urllib.parse import urlparse, parse_qs
 import joblib
 import numpy as np
 import pandas as pd
-from imblearn.over_sampling import SMOTE
+from imblearn.over_sampling import SMOTE, RandomOverSampler
 from imblearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -99,10 +99,11 @@ def train_model(data_path: Path, model_path: Path, model_type: str) -> None:
             max_iter=500,
             class_weight={0: 1, 1: 5},
         )
+        sampler = _build_sampler(y_train)
         pipeline = Pipeline(
             steps=[
                 ("scaler", StandardScaler()),
-                ("smote", SMOTE(random_state=42)),
+                ("sampler", sampler),
                 ("model", classifier),
             ]
         )
@@ -112,9 +113,10 @@ def train_model(data_path: Path, model_path: Path, model_type: str) -> None:
             random_state=42,
             class_weight="balanced",
         )
+        sampler = _build_sampler(y_train)
         pipeline = Pipeline(
             steps=[
-                ("smote", SMOTE(random_state=42)),
+                ("sampler", sampler),
                 ("model", classifier),
             ]
         )
@@ -125,6 +127,8 @@ def train_model(data_path: Path, model_path: Path, model_type: str) -> None:
 
     print("\nClassification report:")
     print(classification_report(y_test, preds, target_names=["Safe", "Attack"]))
+    print("\nConfusion matrix:")
+    print(confusion_matrix(y_test, preds))
     print("\nSample probabilities (first 10):")
     print(np.round(probs[:10], 3))
 
@@ -138,6 +142,33 @@ def train_model(data_path: Path, model_path: Path, model_type: str) -> None:
         model_path,
     )
     print(f"\nSaved model to {model_path}")
+
+    _debug_examples(pipeline, X.columns)
+
+
+def _build_sampler(y_train: pd.Series):
+    value_counts = y_train.value_counts()
+    minority = value_counts.min()
+    if minority < 2:
+        return RandomOverSampler(random_state=42)
+    k_neighbors = min(5, minority - 1)
+    return SMOTE(random_state=42, k_neighbors=k_neighbors)
+
+
+def _debug_examples(pipeline, feature_columns: Iterable[str]) -> None:
+    examples = [
+        "https://example.com",
+        "https://example.com/login?user=admin' OR 1=1 --",
+        "http://urlfiltering.paloaltonetworks.com/test-phishing",
+    ]
+    example_features = build_feature_matrix(examples)
+    example_features = example_features[list(feature_columns)]
+    probs = pipeline.predict_proba(example_features)[:, 1]
+    preds = pipeline.predict(example_features)
+    print("\nDebug predictions:")
+    for url, prob, pred in zip(examples, probs, preds):
+        label = "Attack" if pred == 1 else "Safe"
+        print(f"{url} => {label} (prob_attack={prob:.3f})")
 
 
 def parse_args() -> argparse.Namespace:

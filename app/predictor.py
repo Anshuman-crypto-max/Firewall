@@ -113,6 +113,52 @@ ATTACK_PATTERNS = [
 SEVERITY_SCORE = {"Low": 1, "Medium": 2, "High": 3, "Critical": 4}
 
 
+def preprocess_request(request_text: str) -> dict:
+    raw = (request_text or "").strip()
+    if not raw:
+        return {
+            "raw": "",
+            "normalized": "",
+            "method": "",
+            "url": "",
+            "headers": "",
+            "body": "",
+        }
+
+    lines = [line.strip() for line in raw.splitlines()]
+    lines = [line for line in lines if line != ""]
+    joined = "\n".join(lines)
+
+    method = ""
+    url = ""
+    headers = []
+    body_lines = []
+
+    if lines:
+        first_line = lines[0]
+        parts = first_line.split()
+        if parts:
+            if parts[0].upper() in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}:
+                method = parts[0].upper()
+                if len(parts) > 1:
+                    url = parts[1]
+        for line in lines[1:]:
+            if ":" in line and not body_lines:
+                headers.append(line)
+            else:
+                body_lines.append(line)
+
+    normalized = joined.lower()
+    return {
+        "raw": raw,
+        "normalized": normalized,
+        "method": method,
+        "url": url,
+        "headers": "\n".join(headers).lower(),
+        "body": "\n".join(body_lines).lower(),
+    }
+
+
 def _calculate_anomaly_score(text: str, request_meta: dict | None = None) -> tuple[float, list[str]]:
     lowered = text.lower()
     score = 0.0
@@ -144,7 +190,8 @@ def _calculate_anomaly_score(text: str, request_meta: dict | None = None) -> tup
 
 
 def analyze_request(request_text: str, request_meta: dict | None = None) -> dict:
-    normalized = (request_text or "").strip()
+    parsed = preprocess_request(request_text)
+    normalized = parsed["normalized"]
     if not normalized:
         return {
             "attack_type": "Invalid Input",
@@ -160,7 +207,7 @@ def analyze_request(request_text: str, request_meta: dict | None = None) -> dict
             "message": "Request text is empty.",
         }
 
-    lowered = normalized.lower()
+    lowered = normalized
     findings = []
     prevention_tips = []
     matched_signatures = []

@@ -7,7 +7,7 @@ from flask import current_app, request
 from flask_login import current_user
 
 from .models import SecurityEvent, db
-from .predictor import analyze_request
+from .predictor import analyze_request, preprocess_request
 
 
 EXEMPT_ENDPOINTS = {
@@ -74,6 +74,7 @@ def build_request_text(req) -> str:
 
 def inspect_live_request(req) -> dict:
     request_text = build_request_text(req)
+    processed = preprocess_request(request_text)
     request_meta = {
         "mode": "live",
         "path": req.path,
@@ -83,8 +84,15 @@ def inspect_live_request(req) -> dict:
         "referer": req.headers.get("Referer", ""),
         "has_session_cookie": "session=" in (req.headers.get("Cookie", "").lower()),
     }
-    verdict = analyze_request(request_text, request_meta=request_meta)
-    verdict["request_excerpt"] = request_text[:180] + ("..." if len(request_text) > 180 else "")
+    verdict = analyze_request(processed["raw"], request_meta=request_meta)
+    verdict["request_excerpt"] = processed["raw"][:180] + ("..." if len(processed["raw"]) > 180 else "")
+    current_app.logger.debug(
+        "Live preprocess: method=%s url=%s headers=%s body=%s",
+        processed["method"],
+        processed["url"],
+        processed["headers"][:120],
+        processed["body"][:120],
+    )
     return verdict
 
 

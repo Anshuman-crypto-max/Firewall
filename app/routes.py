@@ -12,7 +12,7 @@ from .login_security import (
     record_attempt,
 )
 from .models import AnalysisLog, BlockedIP, LoginAttempt, SecurityEvent, User, db
-from .predictor import analyze_request
+from .predictor import analyze_request, preprocess_request
 from .security import build_security_summary, generate_vulnerability_scan, persist_security_event
 
 
@@ -184,7 +184,15 @@ def predict():
     if not request_text:
         return jsonify({"error": "request_text is required."}), 400
 
-    result = analyze_request(request_text)
+    processed = preprocess_request(request_text)
+    current_app.logger.debug(
+        "Manual preprocess: method=%s url=%s headers=%s body=%s",
+        processed["method"],
+        processed["url"],
+        processed["headers"][:120],
+        processed["body"][:120],
+    )
+    result = analyze_request(processed["raw"])
     log = AnalysisLog(
         user_id=current_user.id,
         request_text=request_text,

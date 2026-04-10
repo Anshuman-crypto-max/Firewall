@@ -2,7 +2,16 @@ from flask import Blueprint, current_app, flash, jsonify, redirect, render_templ
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from .models import AnalysisLog, SecurityEvent, User, db
+from .login_security import (
+    apply_backoff_delay,
+    block_ip,
+    detect_bruteforce,
+    get_client_ip,
+    is_blocked,
+    log_attempt_to_csv,
+    record_attempt,
+)
+from .models import AnalysisLog, BlockedIP, LoginAttempt, SecurityEvent, User, db
 from .predictor import analyze_request
 from .security import build_security_summary, generate_vulnerability_scan, persist_security_event
 
@@ -88,20 +97,53 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for("main.dashboard"))
 
+    client_ip = get_client_ip(request)
+    if is_blocked(client_ip):
+        message = "Too many login attempts. Try again later."
+        if request.is_json:
+            return jsonify({"error": message}), 429
+        flash(message, "error")
+        return render_template("login.html", blocked=True)
+
     if request.method == "POST":
         identity = request.form.get("identity", "").strip()
         password = request.form.get("password", "")
+        captcha_answer = request.form.get("captcha_answer", "").strip().upper()
 
         user = User.query.filter(
             (User.username == identity) | (User.email == identity.lower())
         ).first()
 
+        verdict = detect_bruteforce(client_ip)
+        if verdict["captcha_required"] and captcha_answer != "SECURITY":
+            record_attempt(client_ip, identity, False)
+            log_attempt_to_csv(client_ip, identity, False, "Captcha required")
+            apply_backoff_delay(verdict["failed_count"])
+            flash("CAPTCHA required. Please enter the security code shown.", "error")
+            return render_template("login.html", captcha_required=True)
+
         if user and check_password_hash(user.password_hash, password):
+            record_attempt(client_ip, identity, True)
+            log_attempt_to_csv(client_ip, identity, True)
             login_user(user)
             flash("Welcome back. You are now signed in.", "success")
             return redirect(url_for("main.dashboard"))
 
+        record_attempt(client_ip, identity, False)
+        verdict = detect_bruteforce(client_ip)
+        log_attempt_to_csv(client_ip, identity, False, verdict["reason"])
+        apply_backoff_delay(verdict["failed_count"])
+
+        if verdict["flags"]:
+            block_ip(client_ip, verdict["reason"] or "Suspicious login activity detected.")
+            message = "Too many login attempts. Try again later."
+            if request.is_json:
+                return jsonify({"error": message}), 429
+            flash(message, "error")
+            return render_template("login.html", blocked=True)
+
         flash("Invalid credentials. Please try again.", "error")
+        return render_template("login.html", captcha_required=verdict["captcha_required"])
 
     return render_template("login.html")
 
@@ -213,3 +255,19 @@ def security_events():
             "summary": build_security_summary(current_user.id),
         }
     ), 200
+
+
+@main_bp.route("/security", methods=["GET"])
+@login_required
+def security_admin():
+    recent_attempts = (
+        LoginAttempt.query.order_by(LoginAttempt.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    blocked = BlockedIP.query.order_by(BlockedIP.expires_at.desc()).all()
+    return render_template(
+        "security.html",
+        attempts=recent_attempts,
+        blocked_ips=blocked,
+    )

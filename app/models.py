@@ -60,6 +60,28 @@ class SecurityEvent(db.Model):
         return f"<SecurityEvent {self.method} {self.path} {self.attack_type}>"
 
 
+class LoginAttempt(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    ip_address = db.Column(db.String(64), nullable=False, index=True)
+    username = db.Column(db.String(120), nullable=True)
+    success = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False, index=True)
+
+    def __repr__(self):
+        return f"<LoginAttempt {self.ip_address} {self.username} {self.success}>"
+
+
+class BlockedIP(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    ip_address = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    reason = db.Column(db.String(255), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<BlockedIP {self.ip_address} until {self.expires_at}>"
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))

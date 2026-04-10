@@ -43,8 +43,17 @@
             <label for="password">Password</label>
             <input id="password" name="password" type="password" placeholder="Enter your password" required>
 
+            {% if captcha_required %}
+                <label for="captcha_answer">Security Check</label>
+                <input id="captcha_answer" name="captcha_answer" type="text" placeholder="Type SECURITY to continue" required>
+            {% endif %}
+
             <button type="submit" class="btn btn-primary">Login</button>
         </form>
+
+        <div id="loginWarning" class="error-banner hidden">
+            Too many attempts detected.
+        </div>
 
         <p class="auth-footer">
             New here?
@@ -52,4 +61,16 @@
         </p>
     </section>
 </main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const blocked = {{ "true" if blocked else "false" }};
+    if (blocked) {
+        const banner = document.getElementById("loginWarning");
+        if (banner) {
+            banner.classList.remove("hidden");
+        }
+    }
+</script>
 {% endblock %}

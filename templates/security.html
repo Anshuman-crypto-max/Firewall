@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Security Monitor | AI Web Attack Detection{% endblock %}
+{% block body_class %}dashboard-body{% endblock %}
+
+{% block content %}
+<main class="dashboard-layout">
+    <aside class="dashboard-sidebar">
+        <div>
+            <p class="eyebrow">Security Control</p>
+            <h1>Login Defense Monitor</h1>
+            <p class="sidebar-copy">
+                Review recent login attempts and blocked IPs detected by the brute-force protection system.
+            </p>
+        </div>
+
+        <div class="sidebar-panels">
+            <div class="sidebar-card">
+                <span>Policy</span>
+                <strong>5 failed attempts / 30 seconds triggers a 5 minute block</strong>
+            </div>
+            <div class="sidebar-card">
+                <span>Signals</span>
+                <strong>Username spray, rapid-fire attempts, CAPTCHA enforcement</strong>
+            </div>
+        </div>
+
+        <a class="btn btn-secondary" href="{{ url_for('main.dashboard') }}">Back to Dashboard</a>
+    </aside>
+
+    <section class="dashboard-main">
+        <section class="history-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Blocked IPs</p>
+                    <h3>Active blocks and expiry times</h3>
+                </div>
+            </div>
+
+            <div class="history-list">
+                {% if blocked_ips %}
+                    {% for item in blocked_ips %}
+                        <article class="history-item">
+                            <div class="history-item-top">
+                                <strong>{{ item.ip_address }}</strong>
+                                <span class="history-badge history-attack">Blocked</span>
+                            </div>
+                            <p>{{ item.reason }}</p>
+                            <div class="history-meta">
+                                <span>Expires at {{ item.expires_at }}</span>
+                            </div>
+                        </article>
+                    {% endfor %}
+                {% else %}
+                    <article class="history-item empty-state">
+                        <strong>No blocked IPs</strong>
+                        <p>Any temporary bans will show up here with their expiry time.</p>
+                    </article>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="history-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Recent Attempts</p>
+                    <h3>Latest login activity</h3>
+                </div>
+            </div>
+
+            <div class="history-list">
+                {% if attempts %}
+                    {% for item in attempts %}
+                        <article class="history-item">
+                            <div class="history-item-top">
+                                <strong>{{ item.ip_address }}</strong>
+                                <span class="history-badge history-{{ 'safe' if item.success else 'attack' }}">
+                                    {{ 'Success' if item.success else 'Failed' }}
+                                </span>
+                            </div>
+                            <p>Username: {{ item.username or 'Unknown' }}</p>
+                            <div class="history-meta">
+                                <span>{{ item.created_at }}</span>
+                            </div>
+                        </article>
+                    {% endfor %}
+                {% else %}
+                    <article class="history-item empty-state">
+                        <strong>No login attempts yet</strong>
+                        <p>Login events will populate as users sign in.</p>
+                    </article>
+                {% endif %}
+            </div>
+        </section>
+    </section>
+</main>
+{% endblock %}

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import csv
+import pickle
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 import pandas as pd
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import unquote, urlparse
 
-import joblib
-import re
+from scipy.sparse import hstack
+
+from .url_features import build_feature_matrix
 
 
 ATTACK_PATTERNS = [
@@ -209,99 +213,128 @@ def _extract_host(headers: list[str]) -> str:
     return ""
 
 
-def extract_url_features(url: str) -> dict[str, float]:
-    parsed = urlparse(url)
-    path = parsed.path or ""
-    query = parsed.query or ""
-    netloc = parsed.netloc or ""
-    full = url.lower()
-    special_chars = sum(full.count(ch) for ch in ["@", "?", "&", "=", "-", "_", "%", "."])
-    query_params = parse_qs(query)
-    suspicious_keywords = [
-        "login",
-        "admin",
-        "verify",
-        "free",
-        "update",
-        "secure",
-        "account",
-        "token",
-        "pay",
-        "bank",
-        "confirm",
-        "signin",
-        "reset",
-    ]
-    suspicious_hits = sum(1 for keyword in suspicious_keywords if keyword in full)
-    digit_ratio = (sum(ch.isdigit() for ch in full) / max(1, len(full)))
-    ip_like = int(bool(re.match(r"^(\d{1,3}\.){3}\d{1,3}", parsed.netloc)))
-
-    return {
-        "length": len(full),
-        "host_length": len(netloc),
-        "path_length": len(path),
-        "query_length": len(query),
-        "num_digits": sum(ch.isdigit() for ch in full),
-        "num_dots": full.count("."),
-        "num_slashes": full.count("/"),
-        "num_special": special_chars,
-        "num_query_params": len(query_params),
-        "has_login": int("login" in full),
-        "has_admin": int("admin" in full),
-        "has_verify": int("verify" in full),
-        "has_free": int("free" in full),
-        "has_update": int("update" in full),
-        "has_secure": int("secure" in full),
-        "has_account": int("account" in full),
-        "has_token": int("token" in full),
-        "has_pay": int("pay" in full),
-        "has_bank": int("bank" in full),
-        "has_confirm": int("confirm" in full),
-        "suspicious_word_count": suspicious_hits,
-        "tld_length": len(parsed.netloc.split(".")[-1]) if "." in parsed.netloc else 0,
-        "digit_ratio": digit_ratio,
-        "ip_like": ip_like,
-    }
-
-
 def _load_url_model():
     model_path = Path(__file__).resolve().parent.parent / "models" / "url_classifier.pkl"
     if not model_path.exists():
         return None
-    return joblib.load(model_path)
+    with model_path.open("rb") as handle:
+        return pickle.load(handle)
 
 
 URL_MODEL = _load_url_model()
 
 
-def classify_url(url: str) -> dict | None:
-    if not URL_MODEL:
-        return None
-    features = extract_url_features(url)
-    feature_columns = URL_MODEL.get("feature_columns") or list(features.keys())
-    vector = {col: features.get(col, 0.0) for col in feature_columns}
-    vector["url_text"] = url.lower()
-    pipeline = URL_MODEL["pipeline"]
-    df = pd.DataFrame([vector], columns=feature_columns)
-    prob_attack = float(pipeline.predict_proba(df)[0][1])
-    threshold = float(Path(__file__).resolve().parent.parent.joinpath("instance", "url_threshold.txt").read_text().strip()
-                      ) if (Path(__file__).resolve().parent.parent / "instance" / "url_threshold.txt").exists() else 0.5
-    status = "Attack" if prob_attack >= threshold else "Safe"
+def _rule_based_url_verdict(url: str) -> dict | None:
+    lowered = unquote(url or "").lower()
+    xss_signatures = [signature for signature in ["<script", "javascript:"] if signature in lowered]
+    if xss_signatures:
+        return _url_result(
+            status="Attack",
+            confidence=0.98,
+            attack_type="Cross-Site Scripting (XSS)",
+            detection_mode="URL Rule Fallback",
+            matched_signatures=xss_signatures,
+        )
+    sqli_signatures = [signature for signature in ["or 1=1", "union select", "'--"] if signature in lowered]
+    if sqli_signatures:
+        return _url_result(
+            status="Attack",
+            confidence=0.98,
+            attack_type="SQL Injection",
+            detection_mode="URL Rule Fallback",
+            matched_signatures=sqli_signatures,
+        )
+    return None
+
+
+def _build_url_vector(url: str, artifact: dict):
+    handcrafted = build_feature_matrix(pd.Series([url]))
+    expected_columns = artifact.get("feature_columns") or list(handcrafted.columns)
+    handcrafted = handcrafted.reindex(columns=expected_columns, fill_value=0.0)
+    numeric = artifact["scaler"].transform(handcrafted)
+    text = artifact["vectorizer"].transform(pd.Series([url]).astype(str).str.lower())
+    return hstack([numeric, text]).tocsr()
+
+
+def _attack_probability(model, X) -> float:
+    attack_index = list(model.classes_).index(1)
+    return float(model.predict_proba(X)[0][attack_index])
+
+
+def _url_result(
+    status: str,
+    confidence: float,
+    attack_type: str,
+    detection_mode: str,
+    matched_signatures: list[str] | None = None,
+) -> dict:
+    is_attack = status == "Attack"
     return {
-        "attack_type": "Malicious URL" if status == "Attack" else "Safe URL",
-        "confidence": prob_attack if status == "Attack" else 1 - prob_attack,
+        "type": attack_type,
+        "attack_type": attack_type,
+        "confidence": confidence,
         "status": status,
-        "severity": "High" if status == "Attack" else "Low",
-        "blocked": status == "Attack",
-        "recommended_action": "Block and investigate the URL origin." if status == "Attack" else "Allow and monitor.",
-        "matched_signatures": [],
+        "severity": "High" if is_attack else "Low",
+        "blocked": is_attack,
+        "recommended_action": "Block and investigate the URL origin." if is_attack else "Allow and monitor.",
+        "matched_signatures": matched_signatures or [],
         "prevention_tips": [
             "Inspect URL reputation and hosting provider.",
             "Enable URL filtering at the edge for known malicious domains.",
         ],
-        "detection_mode": "URL ML Classifier",
-        "message": "URL classification completed by the ML model.",
+        "detection_mode": detection_mode,
+        "message": "URL classification completed.",
     }
+
+
+def _log_url_prediction(url: str, result: dict, prob_attack: float) -> None:
+    log_path = Path(__file__).resolve().parent.parent / "instance" / "url_predictions.csv"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    file_exists = log_path.exists()
+    with log_path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["timestamp", "url", "status", "type", "confidence", "prob_attack", "detection_mode"],
+        )
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "url": url,
+                "status": result.get("status"),
+                "type": result.get("type") or result.get("attack_type"),
+                "confidence": round(float(result.get("confidence", 0.0)), 6),
+                "prob_attack": round(prob_attack, 6),
+                "detection_mode": result.get("detection_mode"),
+            }
+        )
+
+
+def classify_url(url: str) -> dict | None:
+    rule_result = _rule_based_url_verdict(url)
+    if rule_result:
+        _log_url_prediction(url, rule_result, rule_result["confidence"])
+        return rule_result
+
+    if not URL_MODEL:
+        return None
+
+    model = URL_MODEL["model"]
+    X_url = _build_url_vector(url, URL_MODEL)
+    prob_attack = _attack_probability(model, X_url)
+    configured_threshold = URL_MODEL.get("threshold", 0.3)
+    threshold_file = Path(__file__).resolve().parent.parent / "instance" / "url_threshold.txt"
+    threshold = float(threshold_file.read_text().strip()) if threshold_file.exists() else float(configured_threshold)
+    status = "Attack" if prob_attack >= threshold else "Safe"
+    result = _url_result(
+        status=status,
+        confidence=prob_attack if status == "Attack" else 1 - prob_attack,
+        attack_type="Malicious URL" if status == "Attack" else "Safe URL",
+        detection_mode=f"URL ML Classifier ({URL_MODEL.get('model_name', 'model')})",
+    )
+    _log_url_prediction(url, result, prob_attack)
+    return result
 
 
 def _calculate_anomaly_score(text: str, request_meta: dict | None = None) -> tuple[float, list[str]]:

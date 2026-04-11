@@ -22,15 +22,6 @@ const metricTotalScans = document.getElementById("metricTotalScans");
 const metricAttacks = document.getElementById("metricAttacks");
 const metricBlocked = document.getElementById("metricBlocked");
 const metricHighSeverity = document.getElementById("metricHighSeverity");
-const analyticsPanel = document.querySelector(".analytics-panel");
-const topEndpoint = document.getElementById("topEndpoint");
-const topEndpointCount = document.getElementById("topEndpointCount");
-const peakAttackHour = document.getElementById("peakAttackHour");
-const peakAttackHourCount = document.getElementById("peakAttackHourCount");
-const endpointEmptyState = document.getElementById("endpointEmptyState");
-const timeEmptyState = document.getElementById("timeEmptyState");
-let endpointChart = null;
-let timeChart = null;
 
 function setLoading(button, loadingNode, isLoading, idleLabel, loadingLabel) {
     if (!button || !loadingNode) {
@@ -61,187 +52,6 @@ function handleAuthFailure() {
     setTimeout(() => {
         window.location.href = "/login";
     }, 800);
-}
-
-function parseAnalyticsDataset(attributeName) {
-    if (!analyticsPanel) {
-        return {};
-    }
-
-    try {
-        return JSON.parse(analyticsPanel.dataset[attributeName] || "{}");
-    } catch (error) {
-        return {};
-    }
-}
-
-function formatHourRange(hourValue) {
-    const hour = Number.parseInt(hourValue, 10) || 0;
-    const nextHour = (hour + 1) % 24;
-    return `${String(hour).padStart(2, "0")}:00-${String(nextHour).padStart(2, "0")}:00`;
-}
-
-function hasAnyAttack(data) {
-    return Object.values(data || {}).some((value) => Number(value) > 0);
-}
-
-function chartOptions(highlightIndex = -1) {
-    return {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: {
-                display: false,
-            },
-        },
-        scales: {
-            x: {
-                ticks: { color: "#d6e5f5" },
-                grid: { color: "rgba(255, 255, 255, 0.06)" },
-            },
-            y: {
-                beginAtZero: true,
-                ticks: {
-                    color: "#d6e5f5",
-                    precision: 0,
-                },
-                grid: { color: "rgba(255, 255, 255, 0.06)" },
-            },
-        },
-        highlightIndex,
-    };
-}
-
-function updateEndpointHighlight(data) {
-    const entries = Object.entries(data || {});
-    const [endpoint, count] = entries.length ? entries[0] : ["/", 0];
-    topEndpoint.textContent = endpoint;
-    topEndpointCount.textContent = `${count} ${Number(count) === 1 ? "attack" : "attacks"}`;
-}
-
-function updateTimeHighlight(data) {
-    const entries = Object.entries(data || {});
-    const [hour, count] = entries.reduce(
-        (best, item) => (Number(item[1]) > Number(best[1]) ? item : best),
-        ["0", 0]
-    );
-    peakAttackHour.textContent = formatHourRange(hour);
-    peakAttackHourCount.textContent = `${count} ${Number(count) === 1 ? "attack" : "attacks"}`;
-}
-
-function renderEndpointChart(data) {
-    const canvas = document.getElementById("endpointChart");
-    if (!canvas || typeof Chart === "undefined") {
-        return;
-    }
-
-    const entries = Object.entries(data || {});
-    endpointEmptyState.classList.toggle("hidden", entries.length > 0 && hasAnyAttack(data));
-    const labels = entries.length ? entries.map(([endpoint]) => endpoint) : ["No attacks"];
-    const values = entries.length ? entries.map(([, count]) => count) : [0];
-    const maxValue = Math.max(...values);
-    const backgroundColor = values.map((value) => (value === maxValue && maxValue > 0 ? "#ff6b81" : "#6cf0c2"));
-
-    if (endpointChart) {
-        endpointChart.data.labels = labels;
-        endpointChart.data.datasets[0].data = values;
-        endpointChart.data.datasets[0].backgroundColor = backgroundColor;
-        endpointChart.update();
-        return;
-    }
-
-    endpointChart = new Chart(canvas, {
-        type: "bar",
-        data: {
-            labels,
-            datasets: [
-                {
-                    label: "Attacks",
-                    data: values,
-                    backgroundColor,
-                    borderColor: "#ecf4ff",
-                    borderWidth: 1,
-                },
-            ],
-        },
-        options: chartOptions(),
-    });
-}
-
-function renderTimeChart(data) {
-    const canvas = document.getElementById("timeChart");
-    if (!canvas || typeof Chart === "undefined") {
-        return;
-    }
-
-    const labels = Array.from({ length: 24 }, (_, hour) => String(hour));
-    const values = labels.map((hour) => Number((data || {})[hour] || 0));
-    const maxValue = Math.max(...values);
-    timeEmptyState.classList.toggle("hidden", maxValue > 0);
-
-    if (timeChart) {
-        timeChart.data.labels = labels.map(formatHourRange);
-        timeChart.data.datasets[0].data = values;
-        timeChart.data.datasets[0].pointBackgroundColor = values.map((value) => (value === maxValue && maxValue > 0 ? "#ff6b81" : "#6cf0c2"));
-        timeChart.data.datasets[0].pointRadius = values.map((value) => (value === maxValue && maxValue > 0 ? 6 : 3));
-        timeChart.update();
-        return;
-    }
-
-    timeChart = new Chart(canvas, {
-        type: "line",
-        data: {
-            labels: labels.map(formatHourRange),
-            datasets: [
-                {
-                    label: "Attacks",
-                    data: values,
-                    borderColor: "#6cf0c2",
-                    backgroundColor: "rgba(108, 240, 194, 0.14)",
-                    pointBackgroundColor: values.map((value) => (value === maxValue && maxValue > 0 ? "#ff6b81" : "#6cf0c2")),
-                    pointRadius: values.map((value) => (value === maxValue && maxValue > 0 ? 6 : 3)),
-                    fill: true,
-                    tension: 0.32,
-                },
-            ],
-        },
-        options: chartOptions(),
-    });
-}
-
-function renderAnalytics(endpoints, time) {
-    updateEndpointHighlight(endpoints);
-    updateTimeHighlight(time);
-    renderEndpointChart(endpoints);
-    renderTimeChart(time);
-}
-
-async function refreshAnalytics() {
-    if (!analyticsPanel) {
-        return;
-    }
-
-    try {
-        const [endpointResponse, timeResponse] = await Promise.all([
-            fetch("/analytics/endpoints"),
-            fetch("/analytics/time"),
-        ]);
-
-        if (endpointResponse.status === 401 || timeResponse.status === 401) {
-            handleAuthFailure();
-            return;
-        }
-
-        if (!endpointResponse.ok || !timeResponse.ok) {
-            return;
-        }
-
-        const endpointData = await endpointResponse.json();
-        const timeData = await timeResponse.json();
-        renderAnalytics(endpointData.endpoints || {}, timeData.time || {});
-    } catch (error) {
-        return;
-    }
 }
 
 function showResult(data) {
@@ -301,7 +111,6 @@ function prependHistoryItem(item) {
         </div>
     `;
     historyList.prepend(article);
-    refreshAnalytics();
 
     while (historyList.children.length > 6) {
         historyList.removeChild(historyList.lastElementChild);
@@ -482,9 +291,4 @@ if (requestInput) {
             analyzeRequest();
         }
     });
-}
-
-if (analyticsPanel) {
-    renderAnalytics(parseAnalyticsDataset("analyticsEndpoints"), parseAnalyticsDataset("analyticsTime"));
-    window.setInterval(refreshAnalytics, 5000);
 }

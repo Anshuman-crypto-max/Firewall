@@ -13,13 +13,7 @@ from .login_security import (
 )
 from .models import AnalysisLog, BlockedIP, LoginAttempt, SecurityEvent, User, db
 from .predictor import analyze_request, preprocess_request
-from .security import (
-    build_attack_analytics,
-    build_security_summary,
-    extract_endpoint_from_url,
-    generate_vulnerability_scan,
-    persist_security_event,
-)
+from .security import build_security_summary, generate_vulnerability_scan, persist_security_event
 
 
 main_bp = Blueprint("main", __name__)
@@ -175,7 +169,6 @@ def logout():
 @login_required
 def dashboard():
     summary = build_security_summary(current_user.id)
-    analytics = build_attack_analytics()
     recent_manual = (
         AnalysisLog.query.filter_by(user_id=current_user.id)
         .order_by(AnalysisLog.created_at.desc())
@@ -186,7 +179,6 @@ def dashboard():
     return render_template(
         "dashboard.html",
         summary=summary,
-        analytics=analytics,
         recent_manual=[serialize_analysis(item) for item in recent_manual],
         latest_scan=latest_scan,
     )
@@ -212,8 +204,6 @@ def predict():
         processed["body"][:120],
     )
     result = analyze_request(processed["raw"])
-    if processed.get("url"):
-        result["target_endpoint"] = extract_endpoint_from_url(processed["url"])
     current_app.logger.info(
         "URL prediction: status=%s confidence=%.3f",
         result.get("status"),
@@ -250,30 +240,6 @@ def predict():
         "url_converted": processed.get("url_converted", False),
     }
     return jsonify(response), 200
-
-
-@main_bp.route("/analytics/endpoints", methods=["GET"])
-@login_required
-def analytics_endpoints():
-    analytics = build_attack_analytics()
-    return jsonify(
-        {
-            "endpoints": analytics["endpoints"],
-            "most_targeted_endpoint": analytics["most_targeted_endpoint"],
-        }
-    ), 200
-
-
-@main_bp.route("/analytics/time", methods=["GET"])
-@login_required
-def analytics_time():
-    analytics = build_attack_analytics()
-    return jsonify(
-        {
-            "time": analytics["time"],
-            "peak_attack_hour": analytics["peak_attack_hour"],
-        }
-    ), 200
 
 
 @main_bp.route("/scan", methods=["GET"])

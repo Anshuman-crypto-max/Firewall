@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from urllib.parse import unquote, urlparse
+from collections import Counter
+from urllib.parse import unquote
 
 from flask import current_app, request
 from flask_login import current_user
@@ -20,8 +21,6 @@ EXEMPT_ENDPOINTS = {
     "main.scan_security",
     "main.security_events",
     "main.security_admin",
-    "main.analytics_endpoints",
-    "main.analytics_time",
 }
 
 SECURITY_HEADERS = {
@@ -29,24 +28,8 @@ SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-    "Content-Security-Policy": "default-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    "Content-Security-Policy": "default-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 }
-
-
-def extract_endpoint_from_url(url: str) -> str:
-    value = (url or "").strip()
-    if not value:
-        return "/"
-
-    parsed = urlparse(value)
-    if parsed.scheme and parsed.netloc:
-        return parsed.path or "/"
-
-    if value.startswith("/"):
-        parsed_path = urlparse(value).path
-        return parsed_path or "/"
-
-    return "/"
 
 
 def should_inspect_request(req) -> bool:
@@ -115,12 +98,11 @@ def inspect_live_request(req) -> dict:
 
 
 def persist_security_event(verdict: dict, req, source: str = "live", user_id: int | None = None) -> SecurityEvent:
-    event_path = verdict.get("target_endpoint") or req.path
     event = SecurityEvent(
         user_id=user_id,
         source=source,
         method=req.method,
-        path=event_path,
+        path=req.path,
         endpoint=req.endpoint,
         client_ip=req.headers.get("X-Forwarded-For", req.remote_addr),
         user_agent=(req.headers.get("User-Agent", "") or "")[:255],
@@ -136,53 +118,6 @@ def persist_security_event(verdict: dict, req, source: str = "live", user_id: in
     db.session.add(event)
     db.session.commit()
     return event
-
-
-def _attack_events_query(user_id: int | None = None):
-    query = SecurityEvent.query.filter(SecurityEvent.status == "Attack")
-    if user_id is not None:
-        query = query.filter(SecurityEvent.user_id == user_id)
-    return query
-
-
-def most_attacked_endpoints(limit: int = 5, user_id: int | None = None) -> dict[str, int]:
-    rows = (
-        _attack_events_query(user_id=user_id)
-        .with_entities(SecurityEvent.path, db.func.count(SecurityEvent.id).label("attack_count"))
-        .group_by(SecurityEvent.path)
-        .order_by(db.func.count(SecurityEvent.id).desc())
-        .limit(limit)
-        .all()
-    )
-    return {path or "/": int(count) for path, count in rows}
-
-
-def peak_attack_times(user_id: int | None = None) -> dict[str, int]:
-    rows = (
-        _attack_events_query(user_id=user_id)
-        .with_entities(
-            db.func.strftime("%H", SecurityEvent.created_at).label("attack_hour"),
-            db.func.count(SecurityEvent.id),
-        )
-        .group_by("attack_hour")
-        .all()
-    )
-    hour_counts = {str(int(hour)): int(count) for hour, count in rows if hour is not None}
-    return {str(hour): hour_counts.get(str(hour), 0) for hour in range(24)}
-
-
-def build_attack_analytics(user_id: int | None = None) -> dict:
-    endpoint_counts = most_attacked_endpoints(user_id=user_id)
-    hour_counts = peak_attack_times(user_id=user_id)
-    top_endpoint = max(endpoint_counts.items(), key=lambda item: item[1], default=("/", 0))
-    peak_hour = max(hour_counts.items(), key=lambda item: item[1], default=("0", 0))
-
-    return {
-        "endpoints": endpoint_counts,
-        "time": hour_counts,
-        "most_targeted_endpoint": {"endpoint": top_endpoint[0], "count": top_endpoint[1]},
-        "peak_attack_hour": {"hour": peak_hour[0], "count": peak_hour[1]},
-    }
 
 
 def monitor_current_request() -> tuple[dict, SecurityEvent] | None:
@@ -269,9 +204,7 @@ def build_security_summary(user_id: int) -> dict:
     attacks = sum(1 for item in records if item.status in {"Attack", "Suspicious"})
     safe = sum(1 for item in records if item.status == "Safe")
     high_severity = sum(1 for item in records if item.severity in {"Critical", "High"})
-    sources = {}
-    for item in records:
-        sources[item.source] = sources.get(item.source, 0) + 1
+    sources = Counter(item.source for item in records)
 
     return {
         "total_scans": total,

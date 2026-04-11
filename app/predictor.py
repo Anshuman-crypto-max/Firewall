@@ -467,7 +467,7 @@ def analyze_request(request_text: str, request_meta: dict | None = None) -> dict
         "status": "Safe",
         "severity": "Low",
         "blocked": False,
-        "recommended_action": "Allow the request, continue monitoring, and retain the event for audit analytics.",
+        "recommended_action": "Allow the request, continue monitoring, and retain the event for audit review.",
         "matched_signatures": [],
         "prevention_tips": [
             "Keep request logging enabled for later forensic review.",

@@ -56,6 +56,48 @@
             </article>
         </section>
 
+        <section class="analytics-panel" data-analytics-endpoints='{{ analytics.endpoints|tojson }}' data-analytics-time='{{ analytics.time|tojson }}'>
+            <div class="panel-header panel-header-inline">
+                <div>
+                    <p class="eyebrow">Attack Analytics</p>
+                    <h3>Real-time security insights</h3>
+                </div>
+                <span class="analytics-refresh">Updates every 5 seconds</span>
+            </div>
+
+            <div class="analytics-highlight-grid">
+                <article class="metric-card analytics-highlight">
+                    <span>Most Targeted Endpoint 🔥</span>
+                    <strong id="topEndpoint">{{ analytics.most_targeted_endpoint.endpoint }}</strong>
+                    <small id="topEndpointCount">{{ analytics.most_targeted_endpoint.count }} attacks</small>
+                </article>
+                <article class="metric-card analytics-highlight">
+                    <span>Peak Attack Hour 🚨</span>
+                    <strong id="peakAttackHour">{{ "%02d:00-%02d:00"|format(analytics.peak_attack_hour.hour|int, (analytics.peak_attack_hour.hour|int + 1) % 24) }}</strong>
+                    <small id="peakAttackHourCount">{{ analytics.peak_attack_hour.count }} attacks</small>
+                </article>
+            </div>
+
+            <div class="analytics-chart-grid">
+                <article class="chart-panel">
+                    <div class="chart-heading">
+                        <h4>Most Attacked Endpoints</h4>
+                        <span>Top 5</span>
+                    </div>
+                    <canvas id="endpointChart" height="220"></canvas>
+                    <p id="endpointEmptyState" class="helper-copy hidden">No attacks logged yet.</p>
+                </article>
+                <article class="chart-panel">
+                    <div class="chart-heading">
+                        <h4>Attack Time Distribution</h4>
+                        <span>Hourly</span>
+                    </div>
+                    <canvas id="timeChart" height="220"></canvas>
+                    <p id="timeEmptyState" class="helper-copy hidden">No attack timestamps logged yet.</p>
+                </article>
+            </div>
+        </section>
+
         <section class="dual-panel-grid">
             <div class="analyzer-card">
                 <label for="requestInput">Manual Request Analysis</label>
@@ -240,5 +282,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}

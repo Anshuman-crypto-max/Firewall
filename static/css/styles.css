@@ -328,7 +328,9 @@ body {
 .metric-card,
 .history-panel,
 .scan-panel,
-.tips-card {
+.tips-card,
+.analytics-panel,
+.chart-panel {
     background: var(--panel);
     border: 1px solid var(--line);
     box-shadow: var(--shadow);
@@ -508,6 +510,68 @@ body {
     padding: 28px;
 }
 
+.analytics-panel {
+    border-radius: 28px;
+    padding: 28px;
+}
+
+.analytics-refresh {
+    color: var(--muted);
+    font-size: 0.92rem;
+}
+
+.analytics-highlight-grid,
+.analytics-chart-grid {
+    display: grid;
+    gap: 16px;
+    margin-top: 18px;
+}
+
+.analytics-highlight-grid,
+.analytics-chart-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.analytics-highlight {
+    border-color: rgba(255, 107, 129, 0.24);
+}
+
+.analytics-highlight small {
+    display: block;
+    color: var(--danger);
+    margin-top: 8px;
+    font-weight: 700;
+}
+
+.chart-panel {
+    border-radius: 20px;
+    padding: 18px;
+    min-height: 320px;
+    position: relative;
+}
+
+.chart-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.chart-heading h4 {
+    margin: 0;
+    font-family: "Space Grotesk", sans-serif;
+}
+
+.chart-heading span {
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.chart-panel canvas {
+    min-height: 220px;
+}
+
 .scan-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     margin: 18px 0;
@@ -628,7 +692,9 @@ code {
     .metrics-grid,
     .result-grid-extended,
     .dual-panel-grid,
-    .scan-summary {
+    .scan-summary,
+    .analytics-highlight-grid,
+    .analytics-chart-grid {
         grid-template-columns: 1fr;
     }
 
